@@ -21,7 +21,14 @@ async def lifespan(_: FastAPI):
         async with SessionLocal() as session:
             exists = await session.scalar(select(User.id).where(User.username == settings.bootstrap_admin_username))
             if not exists:
-                session.add(User(username=settings.bootstrap_admin_username, password_hash=hash_password(settings.bootstrap_admin_password.get_secret_value()), role=UserRole.ADMIN))
+                bootstrap_password = settings.bootstrap_admin_password.get_secret_value()
+                if settings.environment == "development" and len(bootstrap_password) < 12:
+                    # Explicit local-demo exception only. Production bootstrap enforces the normal policy.
+                    from argon2 import PasswordHasher
+                    password_hash = PasswordHasher().hash(bootstrap_password)
+                else:
+                    password_hash = hash_password(bootstrap_password)
+                session.add(User(username=settings.bootstrap_admin_username, password_hash=password_hash, role=UserRole.ADMIN))
                 await session.commit()
     yield
     await engine.dispose()

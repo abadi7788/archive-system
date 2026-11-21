@@ -1,39 +1,67 @@
 from typing import Annotated
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.api.deps import admin_user
 from app.core.security import encrypt_secret, hash_password
 from app.db import get_db
 from app.models.user import User, UserRole
+from app.models.audit_log import AuditLog
 
 router = APIRouter()
-
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9_.-]+$")
     password: SecretStr = Field(min_length=12)
-    role: UserRole = UserRole.EMPLOYEE
+    role: UserRole = UserRole.ARCHIVER
+    department: str | None = Field(default=None,max_length=160)
     gemini_api_key: SecretStr | None = None
 
+class UserUpdate(BaseModel):
+    username: str | None = Field(default=None,min_length=3,max_length=120,pattern=r"^[A-Za-z0-9_.-]+$")
+    department: str | None = Field(default=None,max_length=160)
+    role: UserRole | None = None
+    is_active: bool | None = None
+    password: SecretStr | None = Field(default=None, min_length=12)
+    gemini_api_key: SecretStr | None = None
 
 @router.post("", status_code=201)
-async def create_user(payload: UserCreate, _: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+async def create_user(payload: UserCreate, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
     if await db.scalar(select(User.id).where(User.username == payload.username)):
         raise HTTPException(status_code=409, detail="Username already exists")
     key = payload.gemini_api_key.get_secret_value() if payload.gemini_api_key else None
-    user = User(username=payload.username, password_hash=hash_password(payload.password.get_secret_value()), role=payload.role,
+    user = User(username=payload.username, password_hash=hash_password(payload.password.get_secret_value()), role=payload.role,department=payload.department,
                 gemini_key_encrypted=encrypt_secret(key) if key else None)
     db.add(user)
+    await db.flush()
+    db.add(AuditLog(actor_id=actor.id, action="user.created", resource_type="user", resource_id=str(user.id), detail={"role":user.role.value}))
     await db.commit()
     await db.refresh(user)
-    return {"id": str(user.id), "username": user.username, "role": user.role.value, "is_active": user.is_active}
+    return {"id": str(user.id), "username": user.username, "role": user.role.value,"department":user.department, "is_active": user.is_active}
 
+@router.patch("/{user_id}")
+async def update_user(user_id: str, payload: UserUpdate, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    import uuid
+    try: user_uuid = uuid.UUID(user_id)
+    except ValueError: raise HTTPException(422, "Invalid user id")
+    user = await db.get(User, user_uuid)
+    if not user: raise HTTPException(404, "User not found")
+    if user.id == actor.id and payload.is_active is False: raise HTTPException(400, "You cannot disable your own account")
+    if payload.username and payload.username != user.username and await db.scalar(select(User.id).where(User.username==payload.username)):
+        raise HTTPException(409,"Username already exists")
+    changes=[]
+    if payload.username is not None: user.username=payload.username; changes.append("username")
+    if "department" in payload.model_fields_set: user.department=payload.department; changes.append("department")
+    if payload.role is not None: user.role=payload.role; changes.append("role")
+    if payload.is_active is not None: user.is_active=payload.is_active; changes.append("is_active")
+    if payload.password is not None: user.password_hash=hash_password(payload.password.get_secret_value()); changes.append("password")
+    if payload.gemini_api_key is not None: user.gemini_key_encrypted=encrypt_secret(payload.gemini_api_key.get_secret_value()); changes.append("gemini_key")
+    db.add(AuditLog(actor_id=actor.id, action="user.updated", resource_type="user", resource_id=str(user.id), detail={"fields":changes}))
+    await db.commit()
+    return {"id":str(user.id),"username":user.username,"role":user.role.value,"department":user.department,"is_active":user.is_active}
 
 @router.get("")
 async def list_users(_: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
     users = (await db.scalars(select(User).order_by(User.username))).all()
-    return [{"id": str(u.id), "username": u.username, "role": u.role.value, "is_active": u.is_active} for u in users]
+    return [{"id": str(u.id), "username": u.username, "role": u.role.value, "department":u.department,"is_active": u.is_active} for u in users]

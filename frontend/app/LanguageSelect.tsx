@@ -1,0 +1,3 @@
+'use client';
+const options=[['ar','العربية'],['en','English'],['fr','Français'],['es','Español'],['tr','Türkçe'],['de','Deutsch'],['ru','Русский'],['zh','中文'],['ja','日本語'],['hi','हिन्दी'],['ur','اردو']];
+export default function LanguageSelect({current}:{current:string}){return <select aria-label="Language" title="Language" value={current} onChange={e=>{const lang=e.target.value;window.location.assign(lang==='ar'?'/':`/${lang}`)}} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-sky-500">{options.map(([code,label])=><option key={code} value={code}>{label}</option>)}</select>}

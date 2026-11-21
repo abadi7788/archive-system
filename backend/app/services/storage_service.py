@@ -7,6 +7,7 @@ import boto3
 from botocore.config import Config
 
 from app.core.config import settings
+from app.core.security import _fernet
 
 LOCAL_ROOT = Path(os.getenv("LOCAL_STORAGE_ROOT", "/data/archive"))
 ACTIVE_PROVIDER = settings.storage_provider.lower()
@@ -16,6 +17,8 @@ class Storage(Protocol):
     async def put(self, key: str, data: bytes, content_type: str) -> None: ...
     async def get(self, key: str) -> bytes: ...
     async def ping(self) -> bool: ...
+    async def delete(self, key: str) -> None: ...
+    async def list_keys(self) -> list[str]: ...
 
 
 class LocalStorage:
@@ -29,13 +32,26 @@ class LocalStorage:
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         path = self._path(key)
         await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(path.write_bytes, data)
+        encrypted = _fernet().encrypt(data)
+        await asyncio.to_thread(path.write_bytes, encrypted)
 
     async def get(self, key: str) -> bytes:
-        return await asyncio.to_thread(self._path(key).read_bytes)
+        stored = await asyncio.to_thread(self._path(key).read_bytes)
+        return _fernet().decrypt(stored)
 
     async def ping(self) -> bool:
         return await asyncio.to_thread(LOCAL_ROOT.mkdir, parents=True, exist_ok=True) is None
+
+    async def delete(self, key: str) -> None:
+        path=self._path(key)
+        if await asyncio.to_thread(path.exists):
+            await asyncio.to_thread(path.unlink)
+
+    async def list_keys(self) -> list[str]:
+        def scan():
+            if not LOCAL_ROOT.exists():return []
+            return [p.relative_to(LOCAL_ROOT).as_posix() for p in LOCAL_ROOT.rglob('*') if p.is_file() and not p.is_symlink()]
+        return await asyncio.to_thread(scan)
 
 
 class S3Storage:
@@ -50,11 +66,13 @@ class S3Storage:
         self.bucket = settings.s3_bucket_name
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
-        await asyncio.to_thread(self.client.put_object, Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+        encrypted = _fernet().encrypt(data)
+        await asyncio.to_thread(self.client.put_object, Bucket=self.bucket, Key=key, Body=encrypted, ContentType="application/octet-stream", Metadata={"archive-encryption":"fernet"})
 
     async def get(self, key: str) -> bytes:
         response = await asyncio.to_thread(self.client.get_object, Bucket=self.bucket, Key=key)
-        return await asyncio.to_thread(response["Body"].read)
+        stored = await asyncio.to_thread(response["Body"].read)
+        return _fernet().decrypt(stored)
 
     async def ping(self) -> bool:
         try:
@@ -62,6 +80,17 @@ class S3Storage:
             return True
         except Exception:
             return False
+
+    async def delete(self, key: str) -> None:
+        await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
+
+    async def list_keys(self) -> list[str]:
+        def scan():
+            keys=[];paginator=self.client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=self.bucket):
+                keys.extend(obj['Key'] for obj in page.get('Contents',[]))
+            return keys
+        return await asyncio.to_thread(scan)
 
 
 def get_storage() -> Storage:
