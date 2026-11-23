@@ -1,18 +1,22 @@
-name: Docker Image CI
+name: Auto Deploy Archive System
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
-
-  build:
-
-    runs-on: ubuntu-latest
-
+  deploy:
+    runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      - name: Pull latest code and rebuild Docker
+        shell: cmd
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "never"
+        run: |
+          cd /d D:\archive-system
+          git config --global --add safe.directory D:/archive-system
+          git -c credential.helper= pull https://x-access-token:${{ github.token }}@github.com/abadi7788/archive-system.git main
+          docker compose up -d --build
