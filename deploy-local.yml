@@ -13,8 +13,11 @@ jobs:
         shell: cmd
         env:
           GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "never"
         run: |
           cd /d D:\archive-system
+          echo --- Starting Git Pull ---
           git config --global --add safe.directory D:/archive-system
-          git pull https://x-access-token:${{ github.token }}@github.com/abadi7788/archive-system.git main
+          git -c credential.helper= pull https://x-access-token:${{ github.token }}@github.com/abadi7788/archive-system.git main
+          echo --- Starting Docker Build ---
           docker compose up -d --build
