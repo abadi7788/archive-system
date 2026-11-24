@@ -58,6 +58,15 @@ export type SystemSummary = {
   gemini_model: string;
 };
 
+export type GeminiSettings = {
+  has_db_key: boolean;
+  masked_key?: string | null;
+  is_enabled: boolean;
+  env_fallback_configured: boolean;
+  effective_configured: boolean;
+  model: string;
+};
+
 export type StorageMetrics = {
   provider: string;
   saved_files: number;
@@ -84,15 +93,24 @@ export function formatBytes(n?: number | null): string {
   return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
-export function formatDateArabic(value?: string | null): string {
+function pad2(num: number): string {
+  return num < 10 ? `0${num}` : String(num);
+}
+
+/** Format dates cleanly in standard English YYYY-MM-DD (Western digits 0-9). */
+export function formatDateISO(value?: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('ar-SA-u-nu-latn', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** Format date & time cleanly in standard English YYYY-MM-DD HH:mm (Western digits 0-9). */
+export function formatDateTimeISO(value?: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${formatDateISO(value)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 export function roleLabel(role: string): string {
@@ -104,13 +122,13 @@ export function roleLabel(role: string): string {
 
 export function statusMeta(status?: string): { label: string; className: string } {
   if (status === 'completed') {
-    return { label: 'مفهرس (OCR)', className: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' };
+    return { label: 'مفهرس', className: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' };
   }
   if (status === 'processing') {
-    return { label: 'جاري الاستخراج…', className: 'bg-sky-50 text-sky-700 border-sky-200/70' };
+    return { label: 'جاري المعالجة…', className: 'bg-sky-50 text-sky-700 border-sky-200/70' };
   }
   if (status === 'failed') {
-    return { label: 'تعذر الاستخراج', className: 'bg-rose-50 text-rose-700 border-rose-200/70' };
+    return { label: 'تعذرت المعالجة', className: 'bg-rose-50 text-rose-700 border-rose-200/70' };
   }
-  return { label: 'في قائمة الفهرسة', className: 'bg-amber-50 text-amber-800 border-amber-200/70' };
+  return { label: 'بانتظار الفهرسة', className: 'bg-amber-50 text-amber-800 border-amber-200/70' };
 }

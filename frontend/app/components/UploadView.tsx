@@ -76,7 +76,7 @@ export default function UploadView({
       return;
     }
     if (candidate.size > 30 * 1024 * 1024) {
-      setError('حجم الملف يتجاوز الحد الأقصى المسموح به (30 ميجابايت).');
+      setError('حجم الملف يتجاوز الحد الأقصى المسموح به (30 MB).');
       return;
     }
     setFile(candidate);
@@ -115,10 +115,9 @@ export default function UploadView({
     <div className="max-w-4xl mx-auto space-y-6">
       <section className="archive-hero !mb-0">
         <div>
-          <span className="section-eyebrow">DOCUMENT UPLOAD</span>
-          <h2>رفع مستند جديد إلى الأرشيف</h2>
+          <h2>رفع مستند جديد</h2>
           <p>
-            اختر الملف وحدد المجلد والبيانات الوصفية. سيقوم النظام باستخراج النصوص العربية والإنجليزية تلقائياً في الخلفية لتمكين البحث الفوري.
+            اختر الملف وحدد المجلد والبيانات الوصفية ليتم حفظه وفهرسة محتواه تلقائياً لتسهيل البحث.
           </p>
         </div>
         <button
@@ -138,7 +137,7 @@ export default function UploadView({
               <span>تم رفع المستند وحفظه بنجاح: {uploadedDoc.file_name}</span>
             </div>
             <p className="text-xs text-emerald-700 mt-1.5">
-              المسار: <b>{uploadedDoc.folder_path || `الرئيسية > ${uploadedDoc.file_name}`}</b> · جاري استخراج النص بالذكاء الاصطناعي في الخلفية.
+              المسار: <b>{uploadedDoc.folder_path || `الرئيسية > ${uploadedDoc.file_name}`}</b> · جاري فهرسة النص في الخلفية.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -202,7 +201,7 @@ export default function UploadView({
                   اسحب الملف هنا أو اضغط للاختيار من جهازك
                 </p>
                 <p className="text-xs text-slate-500">
-                  الأنواع المدعومة: PDF, PNG, JPG, WEBP, TIFF · الحد الأقصى 30 ميجابايت
+                  الأنواع المدعومة: <span dir="ltr">PDF, PNG, JPG, WEBP, TIFF</span> · الحد الأقصى <span dir="ltr">30 MB</span>
                 </p>
               </div>
             ) : (
@@ -220,7 +219,7 @@ export default function UploadView({
                 )}
                 <div className="text-right">
                   <p className="text-sm font-extrabold text-slate-900">{file.name}</p>
-                  <p className="text-xs text-slate-500 mt-1" dir="ltr">
+                  <p className="text-xs text-slate-500 mt-1 tabular-nums" dir="ltr">
                     {formatBytes(file.size)} · {file.type}
                   </p>
                   <button
@@ -274,7 +273,7 @@ export default function UploadView({
           </label>
 
           <label className="block text-xs font-bold text-slate-700">
-            التصنيف (اختياري — يُكتشف تلقائياً عبر OCR)
+            التصنيف (اختياري)
             <input
               list="upload-categories-list"
               className="field mt-1.5 text-sm"
@@ -319,7 +318,7 @@ export default function UploadView({
 
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
           <p className="text-xs text-slate-500">
-            يتم تشفير الملفات عند الحفظ وفهرسة محتواها تلقائياً باستخدام محرك Gemini OCR.
+            يتم حفظ الملفات بأمان وفهرسة محتواها النصي تلقائياً لتسهيل الوصول إليها.
           </p>
           <button type="submit" disabled={busy || !file} className="btn btn-primary w-full sm:w-auto px-7 text-sm">
             {busy ? 'جاري الرفع والحفظ...' : 'رفع المستند للأرشيف'}

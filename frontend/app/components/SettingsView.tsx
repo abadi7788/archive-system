@@ -1,20 +1,22 @@
 'use client';
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useEffect, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import PasswordInput, { validateFlexiblePassword } from './PasswordInput';
 import {
   AuditItem,
   FolderItem,
+  GeminiSettings,
   StorageMetrics,
   SystemSummary,
   User,
   formatBytes,
-  formatDateArabic,
+  formatDateISO,
+  formatDateTimeISO,
   roleLabel,
 } from './types';
 
 type SettingsTab = 'account' | 'admin';
-type AdminSubTab = 'users' | 'storage' | 'taxonomy' | 'reindex' | 'audit';
+type AdminSubTab = 'users' | 'gemini' | 'storage' | 'taxonomy' | 'reindex' | 'audit';
 
 export default function SettingsView({
   user,
@@ -24,12 +26,15 @@ export default function SettingsView({
   categories,
   audit,
   systemSummary,
+  geminiSettings,
   storageMetrics,
   stepUpActive,
   provider,
   onChangePassword,
   onCreateUser,
   onUpdateUser,
+  onSaveGeminiSettings,
+  onTestGeminiSettings,
   onUnlockStorage,
   onProviderChange,
   onSaveProvider,
@@ -47,6 +52,7 @@ export default function SettingsView({
   categories: string[];
   audit: AuditItem[];
   systemSummary: SystemSummary | null;
+  geminiSettings: GeminiSettings | null;
   storageMetrics: StorageMetrics | null;
   stepUpActive: boolean;
   provider: string;
@@ -67,6 +73,12 @@ export default function SettingsView({
       password?: string;
     }
   ) => Promise<void>;
+  onSaveGeminiSettings: (payload: {
+    api_key?: string;
+    is_enabled: boolean;
+    clear_key?: boolean;
+  }) => Promise<{ message: string }>;
+  onTestGeminiSettings: (apiKey?: string) => Promise<{ ok: boolean; message: string }>;
   onUnlockStorage: (masterPassword: string) => Promise<void>;
   onProviderChange: (val: string) => void;
   onSaveProvider: () => Promise<void>;
@@ -103,6 +115,19 @@ export default function SettingsView({
   const [editDept, setEditDept] = useState('');
   const [editPass, setEditPass] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+
+  // Admin Gemini API Key Settings
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [geminiEnabled, setGeminiEnabled] = useState(true);
+  const [geminiBusy, setGeminiBusy] = useState(false);
+  const [geminiTesting, setGeminiTesting] = useState(false);
+  const [geminiMsg, setGeminiMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (geminiSettings) {
+      setGeminiEnabled(geminiSettings.has_db_key ? geminiSettings.is_enabled : true);
+    }
+  }, [geminiSettings]);
 
   // Storage Step-Up
   const [masterPass, setMasterPass] = useState('');
@@ -209,6 +234,55 @@ export default function SettingsView({
     }
   }
 
+  async function handleSaveGemini(e: FormEvent) {
+    e.preventDefault();
+    setGeminiMsg(null);
+    if (!geminiKeyInput.trim() && !geminiSettings?.has_db_key) {
+      setGeminiMsg({ type: 'err', text: 'يرجى إدخال المفتاح قبل الحفظ.' });
+      return;
+    }
+    setGeminiBusy(true);
+    try {
+      const res = await onSaveGeminiSettings({
+        ...(geminiKeyInput.trim() ? { api_key: geminiKeyInput.trim() } : {}),
+        is_enabled: geminiEnabled,
+      });
+      setGeminiKeyInput('');
+      setGeminiMsg({ type: 'ok', text: res.message || 'تم حفظ الإعدادات بنجاح.' });
+    } catch (err: any) {
+      setGeminiMsg({ type: 'err', text: err?.message || 'تعذر حفظ الإعدادات.' });
+    } finally {
+      setGeminiBusy(false);
+    }
+  }
+
+  async function handleTestGemini() {
+    setGeminiMsg(null);
+    setGeminiTesting(true);
+    try {
+      const res = await onTestGeminiSettings(geminiKeyInput.trim() || undefined);
+      setGeminiMsg({ type: res.ok ? 'ok' : 'err', text: res.message });
+    } catch (err: any) {
+      setGeminiMsg({ type: 'err', text: err?.message || 'تعذر اختبار الاتصال.' });
+    } finally {
+      setGeminiTesting(false);
+    }
+  }
+
+  async function handleClearGeminiKey() {
+    setGeminiMsg(null);
+    setGeminiBusy(true);
+    try {
+      const res = await onSaveGeminiSettings({ is_enabled: false, clear_key: true });
+      setGeminiKeyInput('');
+      setGeminiMsg({ type: 'ok', text: res.message || 'تمت إزالة المفتاح المحفوظ.' });
+    } catch (err: any) {
+      setGeminiMsg({ type: 'err', text: err?.message || 'تعذر إزالة المفتاح.' });
+    } finally {
+      setGeminiBusy(false);
+    }
+  }
+
   const diskTotal = storageMetrics?.disk_capacity_bytes ?? systemSummary?.disk_capacity_bytes ?? 0;
   const diskFree = storageMetrics?.disk_free_bytes ?? systemSummary?.disk_free_bytes ?? 0;
   const diskUsed = diskTotal > 0 ? Math.max(0, diskTotal - diskFree) : 0;
@@ -218,16 +292,15 @@ export default function SettingsView({
     <div className="space-y-6">
       <section className="archive-hero !mb-0">
         <div>
-          <span className="section-eyebrow">SETTINGS & GOVERNANCE</span>
-          <h2>الإعدادات وإدارة الحساب</h2>
+          <h2>الإعدادات</h2>
           <p>
             إدارة بيانات حسابك وكلمة المرور
-            {isAdmin ? '، بالإضافة إلى إدارة المستخدمين، التخزين، التصنيفات، وإعادة الفهرسة الذكية.' : '.'}
+            {isAdmin ? '، بالإضافة إلى إدارة المستخدمين وإعدادات النظام والتخزين.' : '.'}
           </p>
         </div>
 
         {/* Main Settings Tabs */}
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shrink-0">
+        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shrink-0 shadow-sm">
           <button
             type="button"
             onClick={() => setTab('account')}
@@ -248,7 +321,7 @@ export default function SettingsView({
                 tab === 'admin' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
-              إدارة النظام
+              إعدادات النظام
             </button>
           )}
         </div>
@@ -301,7 +374,7 @@ export default function SettingsView({
             <div className="pb-3 border-b border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900">تغيير كلمة المرور</h3>
               <p className="text-xs text-slate-500 mt-1">
-                يمكنك استخدام كلمة مرور مرنة (6 أحرف على الأقل تحتوي على حرفين وأرقام أو رموز مثل{' '}
+                يجب أن تحتوي كلمة المرور على <span dir="ltr">6</span> أحرف على الأقل تتضمن حرفين وأرقاماً أو رموزاً (مثال:{' '}
                 <span dir="ltr" className="font-mono font-bold text-slate-700">
                   ab1234
                 </span>
@@ -379,9 +452,10 @@ export default function SettingsView({
             {(
               [
                 ['users', 'users', 'إدارة المستخدمين'],
+                ['gemini', 'key', 'مفتاح Gemini API'],
                 ['storage', 'storage', 'التخزين والنسخ الاحتياطي'],
                 ['taxonomy', 'folder', 'الأقسام والتصنيفات'],
-                ['reindex', 'sparkles', 'إعادة الفهرسة الذكية (AI)'],
+                ['reindex', 'sparkles', 'إعادة فهرسة المستندات'],
                 ['audit', 'audit', 'سجل التدقيق'],
               ] as [AdminSubTab, string, string][]
             ).map(([key, icon, label]) => (
@@ -408,16 +482,16 @@ export default function SettingsView({
                 <div className="pb-3 border-b border-slate-100">
                   <h3 className="text-base font-extrabold text-slate-900">إنشاء مستخدم جديد</h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    كلمة المرور المؤقتة تتبع السياسة المرنة (6 أحرف على الأقل مثل{' '}
+                    كلمة المرور المؤقتة تقبل <span dir="ltr">6</span> أحرف على الأقل مثل{' '}
                     <span dir="ltr" className="font-mono font-bold">
                       ab1234
-                    </span>
-                    ) وسيُطلب من المستخدم تغييرها عند أول دخول.
+                    </span>{' '}
+                    وسيُطلب من المستخدم تغييرها عند أول دخول.
                   </p>
                 </div>
 
                 <label className="block text-xs font-bold text-slate-700">
-                  اسم المستخدم (أحرف إنجليزية وأرقام)
+                  اسم المستخدم
                   <input
                     className="field mt-1.5 text-sm"
                     dir="ltr"
@@ -489,7 +563,7 @@ export default function SettingsView({
               <section className="card p-6 xl:col-span-7 overflow-x-auto">
                 <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
                   <h3 className="text-base font-extrabold text-slate-900">
-                    المستخدمون ({users.length})
+                    المستخدمون (<span dir="ltr" className="tabular-nums">{users.length}</span>)
                   </h3>
                 </div>
                 <table className="w-full text-sm text-right">
@@ -506,7 +580,7 @@ export default function SettingsView({
                     {users.map((u) => (
                       <tr key={u.id} className="hover:bg-slate-50/70">
                         <td className="py-3 font-bold text-slate-900">
-                          <div>{u.username}</div>
+                          <div dir="ltr" className="text-right">{u.username}</div>
                           {u.must_change_password && (
                             <span className="inline-block mt-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                               بانتظار تغيير كلمة المرور
@@ -556,7 +630,110 @@ export default function SettingsView({
             </div>
           )}
 
-          {/* 2. STORAGE USAGE & BACKUP */}
+          {/* 2. ADMIN-ONLY GEMINI API KEY MANAGEMENT */}
+          {adminSub === 'gemini' && (
+            <form onSubmit={handleSaveGemini} className="card p-6 max-w-3xl space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    إعدادات ربط مفتاح Gemini API
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-6">
+                    يُحفظ المفتاح مشفراً داخل قاعدة البيانات ويعتمد عليه النظام تلقائياً في استخراج النصوص، مع بقاء الإعداد الاحتياطي في الخادم مفعّلاً عند الحاجة.
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs font-bold shrink-0 ${
+                    geminiSettings?.effective_configured
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}
+                >
+                  {geminiSettings?.has_db_key && geminiSettings.is_enabled
+                    ? 'مفعّل من قاعدة البيانات'
+                    : geminiSettings?.env_fallback_configured
+                    ? 'يعمل بالإعداد الاحتياطي'
+                    : 'غير مفعّل'}
+                </span>
+              </div>
+
+              {geminiSettings?.has_db_key && (
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-500">المفتاح المحفوظ حالياً</span>
+                    <b dir="ltr" className="block mt-1 font-mono text-sm text-slate-800">
+                      {geminiSettings.masked_key || '••••••••'}
+                    </b>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={geminiBusy}
+                    onClick={handleClearGeminiKey}
+                    className="btn bg-white border-rose-200 text-rose-700 hover:bg-rose-50 text-xs py-2"
+                  >
+                    إزالة المفتاح المحفوظ
+                  </button>
+                </div>
+              )}
+
+              <label className="block text-xs font-bold text-slate-700">
+                {geminiSettings?.has_db_key ? 'تحديث مفتاح Gemini API (اتركه فارغاً للإبقاء على الحالي)' : 'مفتاح Gemini API'}
+                <PasswordInput
+                  wrapperClassName="mt-1.5"
+                  dir="ltr"
+                  className="text-left font-mono"
+                  placeholder="AIzaSy..."
+                  value={geminiKeyInput}
+                  onChange={(e) => setGeminiKeyInput(e.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 cursor-pointer">
+                <div>
+                  <b className="block text-xs font-extrabold text-slate-900">تفعيل المفتاح المحفوظ</b>
+                  <span className="block text-[11px] text-slate-500 mt-0.5">
+                    عند التعطيل يتوقف استخدام المفتاح المحفوظ في قاعدة البيانات ويعتمد النظام على الإعداد الاحتياطي إن وُجد.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={geminiEnabled}
+                  onChange={(e) => setGeminiEnabled(e.target.checked)}
+                  className="w-5 h-5 accent-sky-600 cursor-pointer shrink-0"
+                />
+              </label>
+
+              {geminiMsg && (
+                <p
+                  role="alert"
+                  className={`rounded-xl border px-4 py-3 text-xs font-semibold ${
+                    geminiMsg.type === 'ok'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-rose-200 bg-rose-50 text-rose-700'
+                  }`}
+                >
+                  {geminiMsg.text}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button type="submit" disabled={geminiBusy} className="btn btn-primary text-xs px-6">
+                  {geminiBusy ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+                </button>
+                <button
+                  type="button"
+                  disabled={geminiTesting || geminiBusy}
+                  onClick={handleTestGemini}
+                  className="btn btn-muted text-xs px-5"
+                >
+                  {geminiTesting ? 'جاري اختبار الاتصال...' : 'اختبار الاتصال'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* 3. STORAGE USAGE & BACKUP */}
           {adminSub === 'storage' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -567,7 +744,7 @@ export default function SettingsView({
                       <AppIcon name="archive" size={18} />
                     </span>
                   </div>
-                  <b className="stat-value">
+                  <b className="stat-value tabular-nums" dir="ltr">
                     {storageMetrics?.saved_files ?? systemSummary?.total_documents ?? 0}
                   </b>
                   <span className="stat-foot">إجمالي الملفات المؤرشفة</span>
@@ -580,7 +757,7 @@ export default function SettingsView({
                       <AppIcon name="storage" size={18} />
                     </span>
                   </div>
-                  <b className="stat-value stat-value-small" dir="ltr">
+                  <b className="stat-value stat-value-small tabular-nums" dir="ltr">
                     {formatBytes(
                       storageMetrics?.stored_file_bytes ?? systemSummary?.stored_file_bytes
                     )}
@@ -595,23 +772,27 @@ export default function SettingsView({
                       <AppIcon name="storage" size={18} />
                     </span>
                   </div>
-                  <b className="stat-value stat-value-small" dir="ltr">
+                  <b className="stat-value stat-value-small tabular-nums" dir="ltr">
                     {diskFree ? formatBytes(diskFree) : '—'}
                   </b>
-                  <span className="stat-foot">من أصل {diskTotal ? formatBytes(diskTotal) : '—'}</span>
+                  <span className="stat-foot">
+                    من أصل <span dir="ltr" className="tabular-nums">{diskTotal ? formatBytes(diskTotal) : '—'}</span>
+                  </span>
                 </div>
 
                 <div className="card stat-card">
                   <div className="stat-card-head">
-                    <span>مزود التخزين النشط</span>
+                    <span>نوع التخزين النشط</span>
                     <span className="stat-icon stat-amber">
                       <AppIcon name="settings" size={18} />
                     </span>
                   </div>
-                  <b className="stat-value stat-value-small uppercase">
-                    {storageMetrics?.provider || systemSummary?.provider || provider}
+                  <b className="stat-value stat-value-small">
+                    {(storageMetrics?.provider || systemSummary?.provider || provider) === 's3'
+                      ? 'سحابي'
+                      : 'محلي'}
                   </b>
-                  <span className="stat-foot">تخزين مشفر AES-256 / Fernet</span>
+                  <span className="stat-foot">تخزين محمي ومشفر</span>
                 </div>
               </div>
 
@@ -619,7 +800,7 @@ export default function SettingsView({
                 <section className="card p-5">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2">
                     <span>استهلاك سعة القرص</span>
-                    <span dir="ltr">{diskPct}%</span>
+                    <span dir="ltr" className="tabular-nums">{diskPct}%</span>
                   </div>
                   <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden">
                     <div
@@ -633,7 +814,7 @@ export default function SettingsView({
               {/* Step-Up Protected Storage & Backup Controls */}
               <section className="card p-6 space-y-4">
                 <h3 className="text-base font-extrabold text-slate-900">
-                  إعدادات التخزين المتقدمة والنسخ الاحتياطي المشفر
+                  إعدادات التخزين المتقدمة والنسخ الاحتياطي
                 </h3>
                 {!stepUpActive ? (
                   <form
@@ -654,7 +835,7 @@ export default function SettingsView({
                     className="max-w-md space-y-3"
                   >
                     <p className="text-xs text-slate-600 leading-6">
-                      أدخل كلمة المرور الرئيسية للنظام (Master Admin Password) لتعديل مزود التخزين أو تنزيل نسخة احتياطية مشفرة.
+                      أدخل كلمة المرور الرئيسية للنظام لتعديل إعدادات التخزين أو تنزيل نسخة احتياطية مشفرة.
                     </p>
                     <PasswordInput
                       value={masterPass}
@@ -670,14 +851,14 @@ export default function SettingsView({
                   <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 max-w-xl">
                       <label className="block text-xs font-bold text-slate-700 flex-1">
-                        مزود التخزين
+                        موقع التخزين
                         <select
                           className="field mt-1.5 text-sm"
                           value={provider}
                           onChange={(e) => onProviderChange(e.target.value)}
                         >
-                          <option value="local">تخزين محلي (Docker Volume)</option>
-                          <option value="s3">تخزين سحابي S3 / MinIO</option>
+                          <option value="local">تخزين محلي</option>
+                          <option value="s3">تخزين سحابي</option>
                         </select>
                       </label>
                       <button
@@ -687,16 +868,16 @@ export default function SettingsView({
                           setStorageBusy(true);
                           try {
                             await onSaveProvider();
-                            setStorageMsg('تم حفظ مزود التخزين.');
+                            setStorageMsg('تم حفظ إعداد التخزين.');
                           } catch (err: any) {
-                            setStorageMsg(err?.message || 'تعذر حفظ المزود.');
+                            setStorageMsg(err?.message || 'تعذر حفظ الإعداد.');
                           } finally {
                             setStorageBusy(false);
                           }
                         }}
                         className="btn btn-primary text-xs"
                       >
-                        حفظ المزود
+                        حفظ
                       </button>
                       <button
                         type="button"
@@ -720,9 +901,9 @@ export default function SettingsView({
 
                     <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <b className="text-sm text-slate-900 block">إنشاء نسخة احتياطية مشفرة (ZIP)</b>
+                        <b className="text-sm text-slate-900 block">إنشاء نسخة احتياطية مشفرة</b>
                         <span className="text-xs text-slate-500">
-                          تشمل قاعدة بيانات PostgreSQL وكافة ملفات الأرشيف مشفرة بمفتاح النظام.
+                          تشمل قاعدة البيانات وكافة ملفات الأرشيف محفوظة ومشفرة في ملف واحد.
                         </span>
                       </div>
                       <button
@@ -756,7 +937,7 @@ export default function SettingsView({
             </div>
           )}
 
-          {/* 3. DEPARTMENTS & CATEGORIES */}
+          {/* 4. DEPARTMENTS & CATEGORIES */}
           {adminSub === 'taxonomy' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="card p-6 space-y-4">
@@ -796,7 +977,8 @@ export default function SettingsView({
                         <div className="min-w-0">
                           <b className="text-sm text-slate-800 block truncate">{f.name}</b>
                           <span className="text-[11px] text-slate-500">
-                            {f.item_count ?? 0} ملف / صورة · آخر تعديل {formatDateArabic(f.updated_at)}
+                            <span dir="ltr" className="tabular-nums">{f.item_count ?? 0}</span> ملف / صورة · آخر تعديل{' '}
+                            <span dir="ltr" className="inline-block tabular-nums">{formatDateISO(f.updated_at)}</span>
                           </span>
                         </div>
                         <button
@@ -832,7 +1014,7 @@ export default function SettingsView({
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
-                  <h3 className="text-base font-extrabold text-slate-900">التصنيفات المكتشفة</h3>
+                  <h3 className="text-base font-extrabold text-slate-900">التصنيفات</h3>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {categories.length === 0 ? (
                       <span className="text-xs text-slate-400">لا توجد تصنيفات بعد.</span>
@@ -852,20 +1034,16 @@ export default function SettingsView({
             </div>
           )}
 
-          {/* 4. AI RE-INDEXING */}
+          {/* 5. DOCUMENT RE-INDEXING */}
           {adminSub === 'reindex' && (
             <section className="card p-6 space-y-5 max-w-3xl">
               <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <h3 className="text-base font-extrabold text-slate-900">
-                    إعادة الفهرسة الذكية واستخراج النصوص (Gemini OCR)
+                    إعادة فهرسة المستندات
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 leading-6">
-                    يقوم النظام بتشغيل مهمة خلفية باستخدام{' '}
-                    <span dir="ltr" className="font-mono font-bold text-slate-700">
-                      {systemSummary?.gemini_model || 'gemini-2.5-flash'}
-                    </span>{' '}
-                    لاستخراج النصوص العربية والإنجليزية من الصور وملفات PDF وحفظها في قاعدة البيانات للبحث السريع.
+                    تحديث فهرس النصوص للمستندات والصور المحفوظة في الأرشيف لتحسين دقة البحث في المحتوى.
                   </p>
                 </div>
                 <span
@@ -875,26 +1053,26 @@ export default function SettingsView({
                       : 'bg-amber-50 text-amber-800 border border-amber-200'
                   }`}
                 >
-                  {systemSummary?.gemini_configured ? 'مفتاح Gemini مفعّل' : 'مفتاح GEMINI_API_KEY غير مضبوط'}
+                  {systemSummary?.gemini_configured ? 'خدمة الفهرسة جاهزة' : 'يرجى ضبط مفتاح الخدمة أولاً'}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4">
                   <span className="text-xs text-slate-500">إجمالي المستندات</span>
-                  <b className="block text-2xl font-black text-slate-900 mt-1">
+                  <b dir="ltr" className="block text-2xl font-black text-slate-900 mt-1 tabular-nums text-right">
                     {systemSummary?.total_documents ?? 0}
                   </b>
                 </div>
                 <div className="rounded-2xl bg-emerald-50/70 border border-emerald-200/70 p-4">
                   <span className="text-xs text-emerald-800">مستندات مفهرسة</span>
-                  <b className="block text-2xl font-black text-emerald-900 mt-1">
+                  <b dir="ltr" className="block text-2xl font-black text-emerald-900 mt-1 tabular-nums text-right">
                     {systemSummary?.indexed_documents ?? 0}
                   </b>
                 </div>
                 <div className="rounded-2xl bg-amber-50/70 border border-amber-200/70 p-4">
                   <span className="text-xs text-amber-800">بحاجة للفهرسة</span>
-                  <b className="block text-2xl font-black text-amber-900 mt-1">
+                  <b dir="ltr" className="block text-2xl font-black text-amber-900 mt-1 tabular-nums text-right">
                     {systemSummary?.pending_documents ?? 0}
                   </b>
                 </div>
@@ -951,11 +1129,11 @@ export default function SettingsView({
             </section>
           )}
 
-          {/* 5. AUDIT LOG */}
+          {/* 6. AUDIT LOG */}
           {adminSub === 'audit' && (
             <section className="card p-6 overflow-x-auto">
               <h3 className="text-base font-extrabold text-slate-900 mb-4">
-                سجل التدقيق الأمني ({audit.length})
+                سجل التدقيق (<span dir="ltr" className="tabular-nums">{audit.length}</span>)
               </h3>
               <table className="w-full text-xs text-right">
                 <thead>
@@ -963,7 +1141,7 @@ export default function SettingsView({
                     <th className="pb-2.5 font-bold">الحدث</th>
                     <th className="pb-2.5 font-bold">المورد</th>
                     <th className="pb-2.5 font-bold">التفاصيل</th>
-                    <th className="pb-2.5 font-bold">التاريخ</th>
+                    <th className="pb-2.5 font-bold">التاريخ والوقت</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -976,7 +1154,9 @@ export default function SettingsView({
                       <td className="py-2.5 text-slate-500 max-w-xs truncate" dir="ltr">
                         {a.detail ? JSON.stringify(a.detail) : '—'}
                       </td>
-                      <td className="py-2.5 text-slate-500">{formatDateArabic(a.created_at)}</td>
+                      <td className="py-2.5 text-slate-500 tabular-nums" dir="ltr">
+                        {formatDateTimeISO(a.created_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

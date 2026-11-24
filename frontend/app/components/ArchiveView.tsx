@@ -7,7 +7,7 @@ import {
   FolderItem,
   User,
   formatBytes,
-  formatDateArabic,
+  formatDateISO,
   statusMeta,
 } from './types';
 
@@ -50,6 +50,7 @@ export default function ArchiveView({
   onCreateFolder,
   onPreviewDoc,
   onDownloadDoc,
+  onDeleteDoc,
   onExport,
   onGoUpload,
 }: {
@@ -70,6 +71,7 @@ export default function ArchiveView({
   onCreateFolder: (name: string, parentId: string | null) => Promise<void>;
   onPreviewDoc: (doc: DocItem) => void;
   onDownloadDoc: (doc: DocItem) => void;
+  onDeleteDoc: (doc: DocItem) => Promise<void>;
   onExport: (kind: 'excel' | 'pdf') => void;
   onGoUpload: () => void;
 }) {
@@ -78,6 +80,10 @@ export default function ArchiveView({
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<DocItem | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
+
+  const canModify = user.role !== 'viewer';
 
   const folderMap = useMemo(() => {
     const map: Record<string, FolderItem> = {};
@@ -148,23 +154,33 @@ export default function ArchiveView({
     }
   }
 
+  async function confirmDeleteDoc() {
+    if (!docToDelete) return;
+    setDeletingDoc(true);
+    try {
+      await onDeleteDoc(docToDelete);
+      setDocToDelete(null);
+    } finally {
+      setDeletingDoc(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Compact Header Banner */}
       <section className="archive-hero !mb-0">
         <div>
-          <span className="section-eyebrow">ARCHIVE EXPLORER</span>
-          <h2>الأرشيف الإلكتروني والبحث الذكي</h2>
+          <h2>الأرشيف الإلكتروني</h2>
           <p>
-            تصفح المجلدات وابحث فوراً في أسماء الملفات والنصوص المستخرجة بالذكاء الاصطناعي (عربي وإنجليزي).
+            تصفح المجلدات وابحث في أسماء الملفات ومحتوى المستندات بسهولة وسرعة.
           </p>
         </div>
         <div className="archive-hero-actions flex-wrap">
           <div className="archive-count-chip">
             <span>المستندات الظاهرة</span>
-            <b>{docs.length}</b>
+            <b dir="ltr" className="tabular-nums">{docs.length}</b>
           </div>
-          {user.role !== 'viewer' && (
+          {canModify && (
             <>
               <button
                 type="button"
@@ -188,7 +204,7 @@ export default function ArchiveView({
       </section>
 
       {/* Inline New Folder Bar */}
-      {showNewFolder && user.role !== 'viewer' && (
+      {showNewFolder && canModify && (
         <form
           onSubmit={handleFolderCreate}
           className="card p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 border-sky-200 bg-sky-50/40"
@@ -239,8 +255,8 @@ export default function ArchiveView({
               </span>
               <input
                 type="search"
-                className="field ps-11"
-                placeholder="ابحث باسم الملف أو بأي نص داخل المستندات والصور (OCR)..."
+                className="field field-icon-start"
+                placeholder="ابحث باسم الملف أو بأي نص داخل المستندات والصور..."
                 value={query}
                 onChange={(e) => onQueryChange(e.target.value)}
               />
@@ -248,7 +264,7 @@ export default function ArchiveView({
 
             <div className="flex items-center gap-2 shrink-0">
               <button type="submit" disabled={busy} className="btn btn-primary px-5 text-sm">
-                {busy ? 'جاري البحث...' : 'بحث ذكي'}
+                {busy ? 'جاري البحث...' : 'بحث'}
               </button>
               <button
                 type="button"
@@ -262,7 +278,10 @@ export default function ArchiveView({
                 <AppIcon name="filter" size={15} />
                 <span>فلاتر البحث</span>
                 {activeFilterCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-sky-600 text-white text-[10px] font-bold">
+                  <span
+                    dir="ltr"
+                    className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-sky-600 text-white text-[10px] font-bold tabular-nums"
+                  >
                     {activeFilterCount}
                   </span>
                 )}
@@ -348,9 +367,8 @@ export default function ArchiveView({
                 />
               </label>
 
-              {/* Fixed RTL Date Inputs: explicit LTR input container so YYYY-MM-DD displays cleanly */}
               <label className="block text-xs font-bold text-slate-600">
-                من تاريخ (YYYY-MM-DD)
+                من تاريخ <span dir="ltr" className="text-[11px] font-normal text-slate-400">(YYYY-MM-DD)</span>
                 <div dir="ltr" className="mt-1.5">
                   <input
                     type="date"
@@ -365,7 +383,7 @@ export default function ArchiveView({
               </label>
 
               <label className="block text-xs font-bold text-slate-600">
-                إلى تاريخ (YYYY-MM-DD)
+                إلى تاريخ <span dir="ltr" className="text-[11px] font-normal text-slate-400">(YYYY-MM-DD)</span>
                 <div dir="ltr" className="mt-1.5">
                   <input
                     type="date"
@@ -394,7 +412,7 @@ export default function ArchiveView({
             onClick={() => onSelectFolder('')}
             className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors ${
               !selectedFolder
-                ? 'bg-sky-50 text-sky-800 border border-sky-200/70'
+                ? 'bg-white text-sky-800 border border-sky-200 shadow-sm'
                 : 'hover:bg-white text-slate-600'
             }`}
           >
@@ -412,7 +430,7 @@ export default function ArchiveView({
                   onClick={() => onSelectFolder(crumb.id)}
                   className={`rounded-lg px-2.5 py-1.5 transition-colors ${
                     isLast
-                      ? 'bg-sky-50 text-sky-800 border border-sky-200/70'
+                      ? 'bg-white text-sky-800 border border-sky-200 shadow-sm'
                       : 'hover:bg-white text-slate-600'
                   }`}
                 >
@@ -424,7 +442,7 @@ export default function ArchiveView({
         </nav>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
             <button
               type="button"
               onClick={() => setViewMode('grid')}
@@ -451,14 +469,14 @@ export default function ArchiveView({
           <button
             type="button"
             onClick={() => onExport('excel')}
-            className="btn btn-muted text-xs py-2"
+            className="btn bg-white border-slate-200 text-slate-700 hover:bg-slate-50 text-xs py-2"
           >
             تصدير Excel
           </button>
           <button
             type="button"
             onClick={() => onExport('pdf')}
-            className="btn btn-muted text-xs py-2"
+            className="btn bg-white border-slate-200 text-slate-700 hover:bg-slate-50 text-xs py-2"
           >
             تصدير PDF
           </button>
@@ -470,7 +488,7 @@ export default function ArchiveView({
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-extrabold text-slate-800">
-              المجلدات ({visibleFolders.length})
+              المجلدات (<span dir="ltr" className="tabular-nums">{visibleFolders.length}</span>)
             </h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -487,8 +505,9 @@ export default function ArchiveView({
                     <span className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-50 to-teal-50 border border-sky-100 text-sky-700 grid place-items-center shrink-0 group-hover:from-sky-600 group-hover:to-teal-600 group-hover:text-white transition-colors">
                       <AppIcon name="folder" size={24} />
                     </span>
-                    <span className="inline-flex items-center rounded-full bg-sky-50 border border-sky-100 px-3 py-1 text-xs font-bold text-sky-800">
-                      {count} ملف / صورة
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 border border-sky-100 px-3 py-1 text-xs font-bold text-sky-800">
+                      <span dir="ltr" className="tabular-nums">{count}</span>
+                      <span>ملف / صورة</span>
                     </span>
                   </div>
 
@@ -497,10 +516,15 @@ export default function ArchiveView({
                       {folder.name}
                     </h4>
                     <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                      <span>آخر تعديل: {formatDateArabic(folder.updated_at)}</span>
+                      <span>
+                        آخر تعديل:{' '}
+                        <span dir="ltr" className="inline-block tabular-nums font-medium text-slate-600">
+                          {formatDateISO(folder.updated_at)}
+                        </span>
+                      </span>
                       {folder.subfolder_count ? (
                         <span className="text-teal-700 font-semibold">
-                          {folder.subfolder_count} مجلد فرعي
+                          <span dir="ltr" className="tabular-nums">{folder.subfolder_count}</span> مجلد فرعي
                         </span>
                       ) : null}
                     </div>
@@ -516,7 +540,7 @@ export default function ArchiveView({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-extrabold text-slate-800">
-            الملفات والمستندات ({docs.length})
+            الملفات والمستندات (<span dir="ltr" className="tabular-nums">{docs.length}</span>)
           </h3>
           {query.trim() && (
             <span className="text-xs text-sky-700 font-semibold">
@@ -538,7 +562,7 @@ export default function ArchiveView({
                 ? 'جرّب تعديل كلمات البحث أو إزالة الفلاتر لعرض جميع الملفات.'
                 : 'هذا المجلد فارغ حالياً. يمكنك رفع مستند جديد أو اختيار مجلد آخر.'}
             </p>
-            {user.role !== 'viewer' && !query.trim() && (
+            {canModify && !query.trim() && (
               <button
                 type="button"
                 onClick={onGoUpload}
@@ -578,11 +602,15 @@ export default function ArchiveView({
                           {doc.file_name}
                         </h4>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                          <span>{formatDateArabic(doc.created_at)}</span>
+                          <span dir="ltr" className="tabular-nums">
+                            {formatDateISO(doc.created_at)}
+                          </span>
                           {doc.file_size ? (
                             <>
                               <span>·</span>
-                              <span dir="ltr">{formatBytes(doc.file_size)}</span>
+                              <span dir="ltr" className="tabular-nums">
+                                {formatBytes(doc.file_size)}
+                              </span>
                             </>
                           ) : null}
                           <span
@@ -619,7 +647,7 @@ export default function ArchiveView({
                       </div>
                     )}
 
-                    {/* Highlighted OCR Text Snippet */}
+                    {/* Highlighted Matching Text Snippet */}
                     {renderHighlightedSnippet(doc.snippet || doc.summary)}
                   </div>
 
@@ -639,6 +667,17 @@ export default function ArchiveView({
                     >
                       تنزيل
                     </button>
+                    {canModify && (
+                      <button
+                        type="button"
+                        onClick={() => setDocToDelete(doc)}
+                        className="btn py-2 px-2.5 text-xs border-rose-200/80 bg-rose-50/80 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+                        title="حذف الملف"
+                        aria-label={`حذف ${doc.file_name}`}
+                      >
+                        <AppIcon name="trash" size={16} />
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -692,8 +731,14 @@ export default function ArchiveView({
                           <AppIcon name="folder" size={12} className="text-sky-600" />
                           <span>{fullPath}</span>
                         </span>
-                        <span>{formatDateArabic(doc.created_at)}</span>
-                        {doc.file_size ? <span dir="ltr">{formatBytes(doc.file_size)}</span> : null}
+                        <span dir="ltr" className="tabular-nums">
+                          {formatDateISO(doc.created_at)}
+                        </span>
+                        {doc.file_size ? (
+                          <span dir="ltr" className="tabular-nums">
+                            {formatBytes(doc.file_size)}
+                          </span>
+                        ) : null}
                       </div>
 
                       {renderHighlightedSnippet(doc.snippet || doc.summary)}
@@ -715,6 +760,17 @@ export default function ArchiveView({
                     >
                       تنزيل
                     </button>
+                    {canModify && (
+                      <button
+                        type="button"
+                        onClick={() => setDocToDelete(doc)}
+                        className="btn py-2 px-2.5 text-xs border-rose-200/80 bg-rose-50/80 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+                        title="حذف الملف"
+                        aria-label={`حذف ${doc.file_name}`}
+                      >
+                        <AppIcon name="trash" size={16} />
+                      </button>
+                    )}
                   </div>
                 </article>
               );
@@ -722,6 +778,61 @@ export default function ArchiveView({
           </div>
         )}
       </section>
+
+      {/* Delete Confirmation Modal */}
+      {docToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-doc-title"
+          dir="rtl"
+          className="fixed inset-0 z-[85] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deletingDoc) setDocToDelete(null);
+          }}
+        >
+          <div className="card max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+              <span className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 grid place-items-center shrink-0">
+                <AppIcon name="trash" size={20} />
+              </span>
+              <div>
+                <h3 id="delete-doc-title" className="text-base font-extrabold text-slate-900">
+                  تأكيد حذف الملف
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  لا يمكن التراجع عن هذا الإجراء بعد التنفيذ.
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-700 leading-7">
+              هل أنت متأكد من رغبتك في حذف الملف{' '}
+              <b className="text-slate-900 break-all">«{docToDelete.file_name}»</b>{' '}
+              نهائياً من الأرشيف؟
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingDoc}
+                onClick={() => setDocToDelete(null)}
+                className="btn btn-muted text-xs"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={deletingDoc}
+                onClick={confirmDeleteDoc}
+                className="btn bg-rose-600 hover:bg-rose-700 text-white text-xs px-5"
+              >
+                {deletingDoc ? 'جاري الحذف...' : 'تأكيد الحذف'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

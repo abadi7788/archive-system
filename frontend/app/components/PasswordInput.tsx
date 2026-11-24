@@ -43,8 +43,8 @@ export default function PasswordInput({
   variant = 'field',
   className = '',
   wrapperClassName = '',
-  showLabel = 'إظهار كلمة المرور',
-  hideLabel = 'إخفاء كلمة المرور',
+  showLabel = 'إظهار',
+  hideLabel = 'إخفاء',
   ...props
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
@@ -52,11 +52,11 @@ export default function PasswordInput({
   if (variant === 'login') {
     return (
       <div className={`login-input-wrap ${wrapperClassName}`}>
-        <span aria-hidden="true">🔒</span>
+        <span aria-hidden="true" className="shrink-0 select-none">❖</span>
         <input
           {...props}
           type={visible ? 'text' : 'password'}
-          className={className}
+          className={`flex-1 min-w-0 ${className}`}
         />
         <button
           type="button"
@@ -76,7 +76,7 @@ export default function PasswordInput({
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className={`field pe-11 ${className}`}
+        className={`field field-icon-end ${className}`}
       />
       <button
         type="button"

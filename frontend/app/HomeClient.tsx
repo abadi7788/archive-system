@@ -1,5 +1,5 @@
 'use client';
-import React, { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import BrandMark, { AppIcon } from './BrandMark';
 import DocumentModal from './DocumentModal';
 import LanguageSelect from './LanguageSelect';
@@ -18,6 +18,7 @@ import {
   AuditItem,
   DocItem,
   FolderItem,
+  GeminiSettings,
   StorageMetrics,
   SystemSummary,
   User,
@@ -59,8 +60,6 @@ export default function HomeClient() {
   // Navigation & Global UI
   const [view, setView] = useState<NavView>('archive');
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   // Archive State
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -77,6 +76,7 @@ export default function HomeClient() {
   const [users, setUsers] = useState<User[]>([]);
   const [audit, setAudit] = useState<AuditItem[]>([]);
   const [systemSummary, setSystemSummary] = useState<SystemSummary | null>(null);
+  const [geminiSettings, setGeminiSettings] = useState<GeminiSettings | null>(null);
   const [storageMetrics, setStorageMetrics] = useState<StorageMetrics | null>(null);
   const [stepUpToken, setStepUpToken] = useState('');
   const [provider, setProvider] = useState('local');
@@ -85,7 +85,6 @@ export default function HomeClient() {
     setToken('');
     setUser(null);
     setStepUpToken('');
-    setProfileMenuOpen(false);
     setActiveDoc(null);
     try {
       sessionStorage.removeItem(AUTH_STORAGE_KEY);
@@ -179,17 +178,6 @@ export default function HomeClient() {
     }
   }, []);
 
-  // Close profile dropdown on outside click
-  useEffect(() => {
-    const onClickOutside = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setProfileMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-  }, []);
-
   // Revoke preview blob URL on close/unmount
   useEffect(() => {
     return () => {
@@ -264,16 +252,20 @@ export default function HomeClient() {
   const loadAdminData = useCallback(async () => {
     if (!token || user?.role !== 'admin') return;
     try {
-      const [uList, aList, summary] = await Promise.all([
+      const [uList, aList, summary, gSettings] = await Promise.all([
         request('/users'),
         request('/audit?limit=100').catch(() => []),
         request('/admin/system-summary').catch(() => null),
+        request('/admin/gemini-settings').catch(() => null),
       ]);
       setUsers(Array.isArray(uList) ? uList : []);
       setAudit(Array.isArray(aList) ? aList : []);
       if (summary) {
         setSystemSummary(summary);
         if (summary.provider) setProvider(summary.provider);
+      }
+      if (gSettings) {
+        setGeminiSettings(gSettings);
       }
     } catch {
       // handled per action
@@ -389,6 +381,17 @@ export default function HomeClient() {
     return created;
   }
 
+  async function handleDeleteDoc(doc: DocItem) {
+    try {
+      await request(`/documents/${doc.id}`, { method: 'DELETE' });
+      setDocs((prev) => prev.filter((item) => item.id !== doc.id));
+      await loadArchiveMetadata();
+      setNotice({ type: 'ok', text: `تم حذف الملف «${doc.file_name}» بنجاح.` });
+    } catch (err: any) {
+      setNotice({ type: 'err', text: err?.message || 'تعذر حذف الملف.' });
+    }
+  }
+
   async function handlePreviewDoc(doc: DocItem) {
     try {
       const [details, fileRes] = await Promise.all([
@@ -493,6 +496,29 @@ export default function HomeClient() {
     await loadAdminData();
   }
 
+  async function handleSaveGeminiSettings(payload: {
+    api_key?: string;
+    is_enabled: boolean;
+    clear_key?: boolean;
+  }) {
+    const res = await request('/admin/gemini-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    setGeminiSettings(res);
+    await loadAdminData();
+    return res;
+  }
+
+  async function handleTestGeminiSettings(apiKey?: string) {
+    return request('/admin/gemini-settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(apiKey ? { api_key: apiKey } : {}),
+    });
+  }
+
   async function handleUnlockStorage(masterPassword: string) {
     const res = await request('/auth/admin/master-challenge', {
       method: 'POST',
@@ -529,7 +555,7 @@ export default function HomeClient() {
       method: 'POST',
       headers: { 'X-Admin-Step-Up': stepUpToken },
     });
-    return res?.ok ? 'الاتصال بمزود التخزين ناجح.' : 'تعذر الاتصال بمزود التخزين.';
+    return res?.ok ? 'الاتصال بموقع التخزين ناجح.' : 'تعذر الاتصال بموقع التخزين.';
   }
 
   async function handleCreateBackup() {
@@ -575,7 +601,7 @@ export default function HomeClient() {
   const pageTitle =
     view === 'archive' ? 'الأرشيف' : view === 'upload' ? 'رفع مستند' : 'الإعدادات';
 
-  // ---------------- LOGIN SCREEN ----------------
+  // ---------------- ORIGINAL LOGIN SCREEN (with Eye Toggle) ----------------
   if (!token || !user) {
     return (
       <>
@@ -589,76 +615,74 @@ export default function HomeClient() {
         <main className="login-shell" dir="rtl">
           <section className="login-panel">
             <div className="login-panel-top">
-              <BrandMark size={40} compact />
-              <span>نظام الأرشفة الإلكتروني · Archive-Yemany</span>
+              <BrandMark size={38} compact />
+              <span>Archive-Yemany</span>
             </div>
 
             <div className="login-panel-content">
               <span className="login-panel-tag">
                 <i />
-                <span>أرشفة مؤسسية مشفرة + بحث ذكي OCR</span>
+                <span>منصة الأرشفة الإلكترونية</span>
               </span>
               <h1>
-                أرشيفك الإلكتروني
+                كل ملفاتك.
                 <br />
-                <em>أسرع وأكثر أماناً</em>
+                <em>في مكان واحد.</em>
               </h1>
               <p>
-                احفظ مستنداتك وصورك في مجلدات منظمة، واستخرج النصوص العربية والإنجليزية تلقائياً للبحث الفوري داخل المحتوى.
+                أرشيف مؤسسي آمن، يساعد فريقك على تنظيم المستندات والوصول للمعلومة بثوانٍ.
               </p>
 
               <div className="login-visual" aria-hidden="true">
                 <div className="login-visual-ring ring-a" />
                 <div className="login-visual-ring ring-b" />
                 <div className="login-doc doc-back">
-                  <b>PDF</b>
-                  <span>ملف رسمي</span>
+                  <b>ARCHIVE</b>
                   <i />
                   <i />
                   <i />
-                  <small>AES-256</small>
                 </div>
                 <div className="login-doc doc-front">
-                  <b>OCR AI</b>
-                  <span>فهرسة ذكية</span>
+                  <b>ARCHIVE</b>
+                  <span>مستند مؤسسي</span>
                   <i />
                   <i />
                   <i />
-                  <small>جاهز للبحث ✓</small>
+                  <small>✓ محفوظ بأمان</small>
                 </div>
-                <div className="login-float-chip">Gemini 2.5 Flash OCR</div>
-                <div className="login-float-lock">🔐</div>
+                <div className="login-float-chip">✦ بحث</div>
+                <div className="login-float-lock">❖</div>
               </div>
             </div>
 
             <div className="login-panel-foot">
-              <span>نظام الأرشفة الإلكتروني</span>
-              <span>PostgreSQL · FastAPI · Docker</span>
+              <span>مصمم لحماية المعرفة المؤسسية</span>
+              <span>© Archive-Yemany</span>
             </div>
           </section>
 
           <section className="login-form-side">
             <div className="login-form-top">
-              <SystemStatusPill status={health.status} onClick={health.retry} />
-              <div className="flex items-center gap-2">
-                <PWAInstallButton compact />
-                <LanguageSelect current="ar" />
+              <div className="login-secure">
+                <i />
+                <span>اتصال آمن</span>
               </div>
+              <LanguageSelect current="ar" />
             </div>
 
             <form onSubmit={handleLogin} className="login-form-card">
               <div className="login-form-icon">
-                <BrandMark size={40} compact />
+                <BrandMark size={38} compact />
               </div>
-              <div className="login-form-eyebrow">ARCHIVE-YEMANY WORKSPACE</div>
+              <div className="login-form-eyebrow">مرحباً بعودتك</div>
               <h2>تسجيل الدخول</h2>
               <p className="login-form-sub">
-                أدخل بيانات حسابك للوصول إلى الأرشيف الإلكتروني والمستندات المفهرسة.
+                أدخل بيانات حسابك للمتابعة إلى مساحة العمل.
               </p>
 
               <label htmlFor="login-username">اسم المستخدم</label>
               <div className="login-input-wrap">
-                <span aria-hidden="true">👤</span>
+                <span aria-hidden="true">♙</span>
                 <input
                   id="login-username"
                   dir="ltr"
@@ -689,19 +713,19 @@ export default function HomeClient() {
               )}
 
               <button type="submit" disabled={authBusy} className="login-submit">
-                <b>{authBusy ? 'جاري التحقق...' : 'الدخول إلى الأرشيف'}</b>
+                <b>{authBusy ? 'جاري التحقق...' : 'الدخول إلى النظام'}</b>
                 <span aria-hidden="true">←</span>
               </button>
 
               <div className="login-form-note">
-                <span>●</span>
-                <span>جلسة مؤمّنة بالتشفير الكامل وصلاحيات دقيقة للأدوار</span>
+                <span>❖</span>
+                <span>بياناتك محمية ومشفرة أثناء الاتصال</span>
               </div>
             </form>
 
             <div className="login-mobile-brand">
               <BrandMark size={30} compact />
-              <span>نظام الأرشفة الإلكتروني</span>
+              <span>Archive-Yemany</span>
             </div>
           </section>
         </main>
@@ -743,9 +767,6 @@ export default function HomeClient() {
                 </span>
               </div>
             </div>
-            <div className="lg:hidden">
-              <SystemStatusPill status={health.status} dark onClick={health.retry} />
-            </div>
           </div>
 
           {/* Primary Navigation (3 Clean Sections) */}
@@ -778,20 +799,16 @@ export default function HomeClient() {
           </nav>
         </div>
 
-        {/* Sidebar Footer: PWA Install + Live Status + User + Logout */}
-        <div className="hidden lg:flex flex-col gap-3 p-4 border-t border-white/10">
+        {/* Sidebar Footer: User Profile Card + Logout ONLY (no duplicate status pill) */}
+        <div className="flex flex-col gap-3 p-4 border-t border-white/10">
           <PWAInstallButton dark />
-
-          <div className="flex items-center justify-between px-1">
-            <SystemStatusPill status={health.status} dark onClick={health.retry} />
-          </div>
 
           <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-sky-500/25 border border-sky-400/30 text-sky-100 font-black text-sm grid place-items-center shrink-0">
               {user.username.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <b className="block text-xs font-extrabold text-white truncate">
+              <b className="block text-xs font-extrabold text-white truncate" dir="ltr">
                 {user.username}
               </b>
               <span className="block text-[11px] text-sky-200/75 truncate">
@@ -813,7 +830,7 @@ export default function HomeClient() {
 
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Top Header */}
+        {/* Top Header: Page Title + Live Status Pill + Language Selector ONLY */}
         <header className="app-header border-b px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 truncate">
@@ -822,72 +839,8 @@ export default function HomeClient() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <div className="hidden sm:block">
-              <SystemStatusPill status={health.status} onClick={health.retry} />
-            </div>
-
-            <div className="hidden md:block">
-              <PWAInstallButton compact />
-            </div>
-
+            <SystemStatusPill status={health.status} onClick={health.retry} />
             <LanguageSelect current="ar" />
-
-            {/* Top-Left User Profile Dropdown Menu */}
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                type="button"
-                onClick={() => setProfileMenuOpen((v) => !v)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 transition-colors"
-                aria-expanded={profileMenuOpen}
-                aria-haspopup="menu"
-              >
-                <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-600 to-teal-600 text-white font-black grid place-items-center">
-                  {user.username.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="hidden sm:inline max-w-[110px] truncate">{user.username}</span>
-                <span className="text-slate-400 text-[10px]">▾</span>
-              </button>
-
-              {profileMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute end-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-xl p-2 z-50"
-                >
-                  <div className="px-3 py-2.5 border-b border-slate-100">
-                    <b className="block text-xs font-extrabold text-slate-900 truncate">
-                      {user.username}
-                    </b>
-                    <span className="block text-[11px] text-slate-500 mt-0.5">
-                      {roleLabel(user.role)}
-                      {user.department ? ` · ${user.department}` : ''}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setView('settings');
-                      setProfileMenuOpen(false);
-                    }}
-                    className="mt-1 w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 text-right"
-                  >
-                    <AppIcon name="settings" size={15} className="text-sky-600" />
-                    <span>إعدادات الحساب</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={clearSession}
-                    className="mt-1 w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 text-right"
-                  >
-                    <AppIcon name="logout" size={15} />
-                    <span>تسجيل الخروج</span>
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </header>
 
@@ -932,6 +885,7 @@ export default function HomeClient() {
               onCreateFolder={handleCreateFolder}
               onPreviewDoc={handlePreviewDoc}
               onDownloadDoc={handleDownloadDoc}
+              onDeleteDoc={handleDeleteDoc}
               onExport={handleExport}
               onGoUpload={() => setView('upload')}
             />
@@ -964,12 +918,15 @@ export default function HomeClient() {
               categories={categories}
               audit={audit}
               systemSummary={systemSummary}
+              geminiSettings={geminiSettings}
               storageMetrics={storageMetrics}
               stepUpActive={Boolean(stepUpToken)}
               provider={provider}
               onChangePassword={handlePasswordChange}
               onCreateUser={handleCreateUser}
               onUpdateUser={handleUpdateUser}
+              onSaveGeminiSettings={handleSaveGeminiSettings}
+              onTestGeminiSettings={handleTestGeminiSettings}
               onUnlockStorage={handleUnlockStorage}
               onProviderChange={setProvider}
               onSaveProvider={handleSaveProvider}

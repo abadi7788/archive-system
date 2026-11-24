@@ -10,7 +10,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: 'نظام الأرشفة الإلكتروني | Archive-Yemany',
-  description: 'نظام الأرشفة الإلكتروني لإدارة المستندات، البحث الذكي في النصوص، والأرشفة الآمنة.',
+  description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والبحث في النصوص والأرشفة الآمنة.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'نظام الأرشفة الإلكتروني | Archive-Yemany',
-    description: 'نظام الأرشفة الإلكتروني لإدارة المستندات، البحث الذكي في النصوص، والأرشفة الآمنة.',
+    description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والبحث في النصوص والأرشفة الآمنة.',
   },
 };
 

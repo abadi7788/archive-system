@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -20,16 +20,20 @@ from starlette.background import BackgroundTask
 from app.api.deps import admin_user
 from app.api.documents import run_ocr_batch_background
 from app.core.config import settings
-from app.core.security import _fernet, decode_access_token
+from app.core.security import _fernet, decode_access_token, decrypt_secret, encrypt_secret
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.document import Document
+from app.models.system_api_key import SystemAPIKey
 from app.models.user import User
 from app.services import storage_service as _storage
+from app.services.gemini_service import GeminiOCRService
 from app.services.storage_service import get_storage
 
 router = APIRouter()
 MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024
+PRIMARY_GEMINI_PRIORITY = 1
+PRIMARY_GEMINI_LABEL = "primary-gemini"
 
 
 def require_step_up(x_admin_step_up: Annotated[str | None, Header()] = None):
@@ -52,6 +56,23 @@ class ReindexRequest(BaseModel):
     force: bool = False
 
 
+class GeminiSettingsUpdate(BaseModel):
+    api_key: SecretStr | None = None
+    is_enabled: bool = True
+    clear_key: bool = False
+
+
+class GeminiTestPayload(BaseModel):
+    api_key: SecretStr | None = None
+
+
+def _mask_key(raw: str) -> str:
+    cleaned = raw.strip()
+    if len(cleaned) <= 8:
+        return "•" * max(4, len(cleaned))
+    return f"{cleaned[:4]}••••••{cleaned[-4:]}"
+
+
 def _disk_stats() -> tuple[int | None, int | None]:
     root = Path(os.getenv("LOCAL_STORAGE_ROOT", "/data/archive"))
     try:
@@ -59,6 +80,127 @@ def _disk_stats() -> tuple[int | None, int | None]:
         return int(disk.total), int(disk.free)
     except OSError:
         return None, None
+
+
+async def _get_primary_gemini_row(db: AsyncSession) -> SystemAPIKey | None:
+    return await db.scalar(select(SystemAPIKey).where(SystemAPIKey.priority == PRIMARY_GEMINI_PRIORITY))
+
+
+def _serialize_gemini_settings(row: SystemAPIKey | None) -> dict:
+    has_db_key = bool(row and row.key_encrypted)
+    is_enabled = bool(row.is_active) if row else False
+    masked = None
+    if row:
+        meta_mask = (row.metadata_json or {}).get("masked_key")
+        if isinstance(meta_mask, str) and meta_mask:
+            masked = meta_mask
+        else:
+            masked = "••••••••"
+    env_fallback = bool(settings.system_gemini_keys)
+    return {
+        "has_db_key": has_db_key,
+        "masked_key": masked,
+        "is_enabled": is_enabled,
+        "env_fallback_configured": env_fallback,
+        "effective_configured": (has_db_key and is_enabled) or env_fallback,
+        "model": settings.gemini_model,
+    }
+
+
+@router.get("/gemini-settings")
+async def get_gemini_settings(
+    _: Annotated[User, Depends(admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    row = await _get_primary_gemini_row(db)
+    return _serialize_gemini_settings(row)
+
+
+@router.put("/gemini-settings")
+async def update_gemini_settings(
+    payload: GeminiSettingsUpdate,
+    actor: Annotated[User, Depends(admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    row = await _get_primary_gemini_row(db)
+    new_key = payload.api_key.get_secret_value().strip() if payload.api_key else ""
+    key_updated = False
+
+    if payload.clear_key:
+        if row:
+            await db.delete(row)
+            row = None
+        key_updated = True
+    elif new_key:
+        if len(new_key) < 12 or len(new_key) > 512:
+            raise HTTPException(422, "صيغة مفتاح Gemini غير صالحة.")
+        encrypted = encrypt_secret(new_key)
+        meta = {"masked_key": _mask_key(new_key), "updated_at": datetime.now(timezone.utc).isoformat()}
+        if row:
+            row.key_encrypted = encrypted
+            row.is_active = payload.is_enabled
+            row.metadata_json = {**(row.metadata_json or {}), **meta}
+        else:
+            row = SystemAPIKey(
+                label=PRIMARY_GEMINI_LABEL,
+                key_encrypted=encrypted,
+                priority=PRIMARY_GEMINI_PRIORITY,
+                is_active=payload.is_enabled,
+                metadata_json=meta,
+            )
+            db.add(row)
+        key_updated = True
+    elif row:
+        row.is_active = payload.is_enabled
+        row.metadata_json = {
+            **(row.metadata_json or {}),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    else:
+        raise HTTPException(422, "يرجى إدخال مفتاح Gemini لحفظه في قاعدة البيانات.")
+
+    db.add(
+        AuditLog(
+            actor_id=actor.id,
+            action="system.gemini_settings_updated",
+            resource_type="system",
+            resource_id=str(row.id) if row else None,
+            detail={"is_enabled": payload.is_enabled, "key_updated": key_updated, "cleared": payload.clear_key},
+        )
+    )
+    await db.commit()
+    if row:
+        await db.refresh(row)
+    return {
+        "message": "تم حفظ إعدادات مفتاح Gemini بنجاح.",
+        **_serialize_gemini_settings(row),
+    }
+
+
+@router.post("/gemini-settings/test")
+async def test_gemini_settings(
+    payload: GeminiTestPayload,
+    _: Annotated[User, Depends(admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    candidate = payload.api_key.get_secret_value().strip() if payload.api_key else ""
+    source = "input"
+    if not candidate:
+        row = await _get_primary_gemini_row(db)
+        if row and row.is_active and row.key_encrypted:
+            try:
+                candidate = decrypt_secret(row.key_encrypted).strip()
+                source = "database"
+            except ValueError:
+                return {"ok": False, "source": "database", "message": "تعذر فك تشفير المفتاح المحفوظ."}
+        elif settings.system_gemini_keys:
+            candidate = settings.system_gemini_keys[0]
+            source = "env"
+        else:
+            return {"ok": False, "source": "none", "message": "لا يوجد مفتاح مفعّل في قاعدة البيانات أو الإعدادات الاحتياطية."}
+
+    ok, message = await GeminiOCRService().test_key(candidate)
+    return {"ok": ok, "source": source, "message": message}
 
 
 @router.get("/system-summary")
@@ -75,6 +217,8 @@ async def system_summary(_: Annotated[User, Depends(admin_user)], db: Annotated[
     stored_bytes = await db.scalar(select(func.coalesce(func.sum(Document.file_size), 0))) or 0
     user_count = await db.scalar(select(func.count(User.id))) or 0
     disk_total, disk_free = _disk_stats()
+    primary_key = await _get_primary_gemini_row(db)
+    gemini_active = bool((primary_key and primary_key.is_active and primary_key.key_encrypted) or settings.system_gemini_keys)
     return {
         "provider": get_storage_provider(),
         "total_documents": int(total_docs),
@@ -84,7 +228,7 @@ async def system_summary(_: Annotated[User, Depends(admin_user)], db: Annotated[
         "disk_capacity_bytes": disk_total,
         "disk_free_bytes": disk_free,
         "user_count": int(user_count),
-        "gemini_configured": bool(settings.system_gemini_keys),
+        "gemini_configured": gemini_active,
         "gemini_model": settings.gemini_model,
     }
 
@@ -135,7 +279,7 @@ async def reindex_documents(
         "queued_count": len(jobs),
         "total_documents": int(total_docs),
         "force": payload.force,
-        "message": f"تمت جدولة إعادة الفهرسة الذكية لـ {len(jobs)} مستند في الخلفية."
+        "message": f"تمت جدولة إعادة فهرسة {len(jobs)} مستند في الخلفية."
         if jobs
         else "جميع المستندات مفهرسة بالفعل ولا توجد ملفات بحاجة لإعادة فهرسة.",
     }
