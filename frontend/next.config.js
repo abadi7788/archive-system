@@ -1,10 +1,16 @@
 /** @type {import('next').NextConfig} */
-const backend = process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8000';
+const backend = process.env.BACKEND_INTERNAL_URL || 'http://backend:8000';
+
 const nextConfig = {
   output: 'standalone',
-  allowedDevOrigins: ['*.e2b.app'],
   async rewrites() {
-    return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backend}/api/:path*`,
+      },
+    ];
   },
 };
+
 module.exports = nextConfig;

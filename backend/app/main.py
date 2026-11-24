@@ -10,25 +10,38 @@ from app.core.config import settings
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Initial bootstrap convenience. Production schema changes should use Alembic migrations.
-    from sqlalchemy import select
+    # Initial bootstrap and automatic startup schema migration for existing PostgreSQL databases.
+    from sqlalchemy import select, text
     from app.db import SessionLocal, engine
     from app.models import Base, User, UserRole
     from app.core.security import hash_password
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure new columns exist on pre-existing deployments without manual intervention.
+        await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"))
     if settings.bootstrap_admin_username and settings.bootstrap_admin_password:
         async with SessionLocal() as session:
             exists = await session.scalar(select(User.id).where(User.username == settings.bootstrap_admin_username))
             if not exists:
                 bootstrap_password = settings.bootstrap_admin_password.get_secret_value()
-                if settings.environment == "development" and len(bootstrap_password) < 12:
-                    # Explicit local-demo exception only. Production bootstrap enforces the normal policy.
-                    from argon2 import PasswordHasher
-                    password_hash = PasswordHasher().hash(bootstrap_password)
-                else:
+                try:
                     password_hash = hash_password(bootstrap_password)
-                session.add(User(username=settings.bootstrap_admin_username, password_hash=password_hash, role=UserRole.ADMIN))
+                except ValueError:
+                    if settings.environment == "development":
+                        from argon2 import PasswordHasher
+                        password_hash = PasswordHasher().hash(bootstrap_password)
+                    else:
+                        raise
+                session.add(
+                    User(
+                        username=settings.bootstrap_admin_username,
+                        password_hash=password_hash,
+                        role=UserRole.ADMIN,
+                        must_change_password=False,
+                    )
+                )
                 await session.commit()
     yield
     await engine.dispose()
@@ -39,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://frontend:3000"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Admin-Step-Up"],
 )
 app.include_router(api_router, prefix="/api/v1")
@@ -59,5 +72,6 @@ async def security_and_no_cache_headers(request: Request, call_next):
 
 
 @app.get("/health", include_in_schema=False)
+@app.get("/api/v1/health", include_in_schema=False)
 async def health():
     return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})

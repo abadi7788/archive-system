@@ -32,9 +32,18 @@ def decrypt_secret(ciphertext: str) -> str:
         raise ValueError("Secret could not be decrypted; verify encryption-key configuration") from exc
 
 
+def validate_password_policy(password: str) -> None:
+    """Flexible policy: min 6 chars, at least 2 letters and at least 1 digit or symbol/other character."""
+    if not password or len(password) < 6:
+        raise ValueError("Password must be at least 6 characters long (e.g. ab1234)")
+    letters = sum(1 for ch in password if ch.isalpha())
+    non_letters = sum(1 for ch in password if not ch.isalpha())
+    if letters < 2 or non_letters < 1:
+        raise ValueError("Password must contain at least 2 letters and numbers/characters (e.g. ab1234)")
+
+
 def hash_password(password: str) -> str:
-    if len(password) < 12:
-        raise ValueError("Passwords must contain at least 12 characters")
+    validate_password_policy(password)
     return _password_hasher.hash(password)
 
 

@@ -31,6 +31,8 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set BOOTSTRAP_ADMIN_PASSWORD in .env}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       SYSTEM_GEMINI_KEY_1: ${SYSTEM_GEMINI_KEY_1:-}
       SYSTEM_GEMINI_KEY_2: ${SYSTEM_GEMINI_KEY_2:-}
       SYSTEM_GEMINI_KEY_3: ${SYSTEM_GEMINI_KEY_3:-}
@@ -49,7 +51,8 @@ services:
     build: ./frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://archive-yemany:8000/api/v1
+      BACKEND_INTERNAL_URL: http://backend:8000
+      NEXT_PUBLIC_API_URL: /api/v1
     ports:
       - "80:3000"
     depends_on: [backend]

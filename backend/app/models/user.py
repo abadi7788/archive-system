@@ -23,3 +23,4 @@ class User(UUIDPrimaryKey, MetadataMixin, Base):
     department: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     gemini_key_encrypted: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

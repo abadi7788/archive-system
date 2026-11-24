@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str | None = None
     bootstrap_admin_password: SecretStr | None = None
 
+    gemini_api_key: SecretStr | None = None
     system_gemini_key_1: SecretStr | None = None
     system_gemini_key_2: SecretStr | None = None
     system_gemini_key_3: SecretStr | None = None
@@ -51,15 +52,21 @@ class Settings(BaseSettings):
 
     @property
     def system_gemini_keys(self) -> tuple[str, ...]:
-        return tuple(
-            value.get_secret_value()
-            for value in (
-                self.system_gemini_key_1,
-                self.system_gemini_key_2,
-                self.system_gemini_key_3,
-            )
-            if value and value.get_secret_value().strip()
-        )
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for value in (
+            self.gemini_api_key,
+            self.system_gemini_key_1,
+            self.system_gemini_key_2,
+            self.system_gemini_key_3,
+        ):
+            if not value:
+                continue
+            cleaned = value.get_secret_value().strip()
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                ordered.append(cleaned)
+        return tuple(ordered)
 
 
 @lru_cache

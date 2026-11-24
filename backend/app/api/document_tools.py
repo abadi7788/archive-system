@@ -22,7 +22,7 @@ router=APIRouter()
 class ChatQuestion(BaseModel):
     question: str=Field(min_length=1,max_length=2000)
 class ShareCreate(BaseModel):
-    password: SecretStr=Field(min_length=12,max_length=200)
+    password: SecretStr=Field(min_length=6,max_length=200)
     expires_in_hours: int=Field(default=24,ge=1,le=720)
 class SharePassword(BaseModel):
     password: SecretStr
@@ -50,7 +50,11 @@ async def create_share(document_id:uuid.UUID,payload:ShareCreate,user:Annotated[
     if not await _can_write_doc(doc,user,db):raise HTTPException(403,'Write access required to share a document')
     token=secrets.token_urlsafe(32)
     expires=datetime.now(timezone.utc)+timedelta(hours=payload.expires_in_hours)
-    link=ShareLink(document_id=doc.id,created_by=user.id,token_hash=_token_hash(token),password_hash=hash_password(payload.password.get_secret_value()),expires_at=expires)
+    try:
+        pw_hash=hash_password(payload.password.get_secret_value())
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    link=ShareLink(document_id=doc.id,created_by=user.id,token_hash=_token_hash(token),password_hash=pw_hash,expires_at=expires)
     db.add(link)
     db.add(AuditLog(actor_id=user.id,action='document.share_created',resource_type='document',resource_id=str(doc.id),detail={'expires_at':expires.isoformat()},ip_address=request.client.host if request.client else None,user_agent=request.headers.get('user-agent')))
     await db.commit()
