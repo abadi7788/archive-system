@@ -52,7 +52,7 @@ body {
   margin: 0;
   background-color: var(--surface-canvas);
   color: var(--ink-primary);
-  font-family: "Plus Jakarta Sans", "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+  font-family: "Tajawal", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   font-feature-settings: "kern", "cv02", "cv03";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -371,4 +371,28 @@ textarea:focus-visible {
     content: "الطباعة مقيّدة وفق سياسة إدارة النظام.";
     direction: rtl;
   }
+}
+
+/* Dense workspace: readable Arabic metadata and bounded independent scroll panes. */
+html, body { max-width: 100%; overflow-x: clip; }
+body { font-weight: 500; }
+input, select, textarea, button { font: inherit; }
+.iso-date { direction: ltr; unicode-bidi: isolate; text-align: left; font-variant-numeric: tabular-nums; font-family: "Plus Jakarta Sans", sans-serif; }
+.file-list-scroll thead { position: sticky; top: 0; z-index: 2; background: var(--surface-subtle); }
+.file-list-scroll { scrollbar-gutter: stable; }
+.archive-workspace table { min-width: 640px; }
+@media (max-width: 639px) {
+  .archive-summary > div { padding: .55rem .65rem; }
+  .archive-summary > div > span { display: none; }
+  .archive-summary { gap: .4rem; }
+  .archive-search { max-height: 42dvh; }
+}
+@media (max-height: 650px) { .archive-summary { display: none; } }
+@media (max-width: 639px) {
+  .archive-workspace table { min-width: 0; width: 100%; table-layout: fixed; }
+  .archive-workspace table th:first-child { width: 30px; }
+  .archive-workspace table th:last-child { width: 66px; }
+  .archive-workspace table th:nth-last-child(2),
+  .archive-workspace table td:nth-last-child(2) { display: none; }
+  .archive-workspace table td, .archive-workspace table th { padding-inline: .4rem; }
 }

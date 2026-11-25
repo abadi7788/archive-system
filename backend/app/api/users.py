@@ -52,6 +52,7 @@ def _user_dict(u: User) -> dict:
     return {
         "id": str(u.id),
         "username": u.username,
+        "has_gemini_key": bool(u.gemini_key_encrypted),
         "full_name": u.full_name,
         "job_title": u.job_title,
         "role": u.role.value,
@@ -321,7 +322,8 @@ async def update_user(
         user.must_change_password = payload.must_change_password
         changes.append("must_change_password")
     if payload.gemini_api_key is not None:
-        user.gemini_key_encrypted = encrypt_secret(payload.gemini_api_key.get_secret_value())
+        raw_key = payload.gemini_api_key.get_secret_value().strip()
+        user.gemini_key_encrypted = encrypt_secret(raw_key) if raw_key else None
         changes.append("gemini_key")
     db.add(
         AuditLog(

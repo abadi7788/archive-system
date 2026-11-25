@@ -20,12 +20,10 @@ import UploadView from './components/UploadView';
 import {
   ArchiveFilters,
   ArchiveScope,
-  AuditItem,
   BulkUploadTask,
   DocItem,
   EmployeeLinkGroup,
   FolderItem,
-  GeminiSettings,
   LocaleCode,
   OwnerSummary,
   StorageMetrics,
@@ -200,9 +198,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   // Admin State
   const [users, setUsers] = useState<User[]>([]);
   const [linkGroups, setLinkGroups] = useState<EmployeeLinkGroup[]>([]);
-  const [audit, setAudit] = useState<AuditItem[]>([]);
   const [systemSummary, setSystemSummary] = useState<SystemSummary | null>(null);
-  const [geminiSettings, setGeminiSettings] = useState<GeminiSettings | null>(null);
   const [storageMetrics, setStorageMetrics] = useState<StorageMetrics | null>(null);
   const [stepUpToken, setStepUpToken] = useState<string>('');
   const [provider, setProvider] = useState<string>('local');
@@ -311,9 +307,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     setTrash(EMPTY_TRASH);
     setUsers([]);
     setLinkGroups([]);
-    setAudit([]);
     setSystemSummary(null);
-    setGeminiSettings(null);
     setStorageMetrics(null);
     setStepUpToken('');
     setPreviewDoc(null);
@@ -520,12 +514,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     async (overrideToken?: string, overrideStepUp?: string) => {
       try {
         const activeStepUp = overrideStepUp ?? stepUpToken;
-        const [usersRes, groupsRes, auditRes, summaryRes, geminiRes] = await Promise.all([
+        const [usersRes, groupsRes, summaryRes] = await Promise.all([
           apiFetch('/users', {}, overrideToken),
           apiFetch('/users/link-groups', {}, overrideToken),
-          apiFetch('/audit?limit=100', {}, overrideToken),
           apiFetch('/admin/system-summary', {}, overrideToken),
-          apiFetch('/admin/gemini-settings', {}, overrideToken),
         ]);
 
         if (usersRes.ok) {
@@ -536,18 +528,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           const data = await groupsRes.json();
           setLinkGroups(Array.isArray(data) ? data : []);
         }
-        if (auditRes.ok) {
-          const data = await auditRes.json();
-          setAudit(Array.isArray(data) ? data : []);
-        }
         if (summaryRes.ok) {
           const data: SystemSummary = await summaryRes.json();
           setSystemSummary(data);
           if (data?.provider) setProvider(data.provider);
-        }
-        if (geminiRes.ok) {
-          const data: GeminiSettings = await geminiRes.json();
-          setGeminiSettings(data);
         }
         if (activeStepUp) {
           const metricsRes = await apiFetch(
@@ -743,6 +727,13 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     }
   }
 
+  async function handleLogout() {
+    try {
+      if (token) await apiFetch('/auth/logout', { method: 'POST' });
+    } catch { /* Local logout must still work if server is unreachable. */ }
+    finally { clearSession(); }
+  }
+
   async function handleUpdatePreferences(prefs: {
     preferred_language?: LocaleCode;
     preferred_theme?: ThemeMode;
@@ -925,81 +916,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err: any) {
-      pushToast('err', err?.message || t.errorGeneric);
-    }
-  }
-
-  async function handlePrintDoc(doc: DocItem) {
-    if (!canPrint) return;
-    try {
-      const res = await apiFetch(`/documents/${doc.id}/file?inline=true`);
-      if (!res.ok) {
-        const msg = await parseErrorDetail(res, t.errorGeneric);
-        pushToast('err', msg);
-        return;
-      }
-      const blob = await res.blob();
-      const mime = (doc.mime_type || blob.type || '').toLowerCase();
-      const blobUrl = URL.createObjectURL(blob);
-
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-
-      const cleanup = () => {
-        window.setTimeout(() => {
-          iframe.remove();
-          URL.revokeObjectURL(blobUrl);
-        }, 60_000);
-      };
-
-      if (mime.startsWith('image/')) {
-        const frameDoc = iframe.contentWindow?.document;
-        if (!frameDoc) {
-          iframe.remove();
-          URL.revokeObjectURL(blobUrl);
-          return;
-        }
-        frameDoc.open();
-        frameDoc.write(`<!doctype html><html><head><title></title><style>
-          @page { margin: 8mm; }
-          html, body { margin: 0; padding: 0; background: #fff; text-align: center; }
-          img { max-width: 100%; max-height: 98vh; object-fit: contain; display: block; margin: 0 auto; }
-        </style></head><body><img id="print-img" /></body></html>`);
-        frameDoc.close();
-        const imgEl = frameDoc.getElementById('print-img') as HTMLImageElement | null;
-        if (imgEl) {
-          imgEl.onload = () => {
-            try {
-              iframe.contentWindow?.focus();
-              iframe.contentWindow?.print();
-            } finally {
-              cleanup();
-            }
-          };
-          imgEl.src = blobUrl;
-        } else {
-          cleanup();
-        }
-      } else {
-        iframe.onload = () => {
-          window.setTimeout(() => {
-            try {
-              iframe.contentWindow?.focus();
-              iframe.contentWindow?.print();
-            } finally {
-              cleanup();
-            }
-          }, 250);
-        };
-        iframe.src = blobUrl;
-      }
     } catch (err: any) {
       pushToast('err', err?.message || t.errorGeneric);
     }
@@ -1354,6 +1270,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     role: string;
     department: string;
     can_print?: boolean;
+    gemini_api_key?: string;
   }) {
     const res = await apiFetch('/users', {
       method: 'POST',
@@ -1378,6 +1295,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       is_active?: boolean;
       can_print?: boolean;
       password?: string;
+      gemini_api_key?: string;
     }
   ) {
     const res = await apiFetch(`/users/${userId}`, {
@@ -1463,41 +1381,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   // Handlers: Admin Gemini / Storage / Reindex
-  async function handleSaveGeminiSettings(payload: {
-    api_key?: string;
-    is_enabled: boolean;
-    clear_key?: boolean;
-  }): Promise<{ message: string }> {
-    const res = await apiFetch('/admin/gemini-settings', {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      throw new Error(msg);
-    }
-    const data = await res.json();
-    await loadAdminData();
-    pushToast('ok', t.savedSuccess);
-    return { message: localizeServerMessage(data?.message, true, locale, t) };
-  }
-
-  async function handleTestGeminiSettings(
-    apiKey?: string
-  ): Promise<{ ok: boolean; message: string }> {
-    const res = await apiFetch('/admin/gemini-settings/test', {
-      method: 'POST',
-      body: JSON.stringify({ api_key: apiKey || null }),
-    });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      return { ok: false, message: msg };
-    }
-    const data = await res.json();
-    const ok = Boolean(data?.ok);
-    return { ok, message: localizeServerMessage(data?.message, ok, locale, t) };
-  }
-
   async function handleUnlockStorage(masterPassword: string) {
     const res = await apiFetch('/auth/admin/master-challenge', {
       method: 'POST',
@@ -1648,24 +1531,18 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         dir={dir}
         className="min-h-[100svh] auth-canvas flex flex-col items-center justify-center p-4 sm:p-6 transition-colors"
       >
-        <main className="card-elevated w-full max-w-4xl overflow-hidden grid lg:grid-cols-2">
-          <section className="vault-showcase p-7 sm:p-10 text-white flex flex-col justify-between">
+        <main className="card-elevated w-full max-w-5xl overflow-hidden grid lg:grid-cols-[1.05fr_1fr]">
+          <section className="vault-showcase relative p-7 sm:p-12 text-white flex flex-col justify-center min-h-40 lg:min-h-[560px]">
             <div className="flex items-center gap-3">
               <BrandMark size={48} />
               <div>
-                <p dir="ltr" className="text-[10px] tracking-[0.2em] font-bold text-cyan-200">ARCHIVE · YEMANY</p>
-                <h2 className="mt-1 text-lg font-bold">{t.appName}</h2>
+                <h2 dir="ltr" className="text-2xl sm:text-3xl font-bold tracking-tight">Archive YemanY</h2>
               </div>
             </div>
             <div aria-hidden="true" className="hidden lg:flex justify-center py-12">
               <div className="rounded-3xl border border-white/10 bg-white/5 p-9 shadow-executive">
                 <AppIcon name="archive" size={90} className="text-cyan-200" />
               </div>
-            </div>
-            <div className="hidden lg:flex items-center gap-3 border-t border-white/10 pt-5 text-sm text-slate-300">
-              <AppIcon name="folder" size={17} /><span>{t.navArchive}</span>
-              <span className="h-1 w-1 rounded-full bg-cyan-300" />
-              <AppIcon name="search" size={17} /><span>{t.appShort}</span>
             </div>
           </section>
           <div className="bg-white dark:bg-[#0F2137] p-7 sm:p-10">
@@ -1746,7 +1623,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               </button>
             </form>
             <div className="mt-7 pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <SystemStatusPill status={health.status} t={t} onClick={health.retry} />
               <PWAInstallButton label={t.installApp} closeLabel={t.close} dir={dir} />
             </div>
           </div>
@@ -1780,7 +1656,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           t={t}
           dir={dir}
           onSubmit={handleFirstLoginPasswordChange}
-          onLogout={() => clearSession()}
+          onLogout={() => { void handleLogout(); }}
         />
         <SystemStatusOverlay
           status={health.status}
@@ -1822,7 +1698,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     badge?: number;
   }[] = [
     { key: 'archive', label: t.navArchive, icon: 'archive' },
-    { key: 'upload', label: t.navUpload, icon: 'upload' },
     { key: 'trash', label: t.navTrash, icon: 'trash', badge: trash.total_count },
     { key: 'settings', label: t.navSettings, icon: 'settings' },
   ];
@@ -2177,7 +2052,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
         <button
           type="button"
-          onClick={() => clearSession()}
+          onClick={() => { void handleLogout(); }}
           className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-rose-500/15 hover:text-rose-200 hover:border-rose-500/30 transition-colors"
         >
           <AppIcon name="logout" size={15} />
@@ -2190,7 +2065,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   return (
     <div
       dir={dir}
-      className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0A1626] text-slate-900 dark:text-slate-100 flex transition-colors"
+      className="h-[100dvh] overflow-hidden bg-[#F1F5F9] dark:bg-[#0A1626] text-slate-900 dark:text-slate-100 flex transition-colors"
     >
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block lg:w-64 shrink-0 sticky top-0 h-[100svh] border-e border-white/10 z-30">
@@ -2210,9 +2085,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
         {/* Clean Minimal Top Header (NO Language Dropdown) */}
-        <header className="sticky top-0 z-20 h-16 bg-white/90 dark:bg-[#0F2137]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="shrink-0 z-20 min-h-16 py-2 bg-white/90 dark:bg-[#0F2137]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -2231,17 +2106,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button type="button" className="btn btn-secondary p-2" title={t.retry} aria-label={t.retry}
-              onClick={() => {
-                if (section === 'archive') {
-                  void loadFolders();
-                  void loadDocuments(selectedFolder, query, filters, undefined, archiveScope);
-                } else if (section === 'trash') void loadTrash();
-                else if (section === 'settings' && user.role === 'admin') void loadAdminData();
-                else { void loadFolders(); void loadTaxonomy(); }
-              }}>
-              <AppIcon name="refresh" size={16} className={searchBusy ? 'animate-spin' : ''} />
-            </button>
             <button type="button" className="btn btn-secondary p-2" title={theme === 'dark' ? t.themeLight : t.themeDark} aria-label={t.appearanceLabel}
               onClick={() => { void handleUpdatePreferences({ preferred_theme: theme === 'dark' ? 'light' : 'dark' }).catch(() => {}); }}>
               <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
@@ -2251,7 +2115,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         </header>
 
         {/* Active Workspace View */}
-        <main className="flex-1 p-4 sm:p-5 lg:p-6">
+        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 ${section === 'archive' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
           {section === 'archive' && (
             <ArchiveView
               user={user}
@@ -2279,17 +2143,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onCreateFolder={handleCreateFolder}
               onDeleteFolder={handleSoftDeleteFolder}
               onPreviewDoc={handlePreviewDoc}
-              onPrintDoc={handlePrintDoc}
               onToggleStar={handleToggleStar}
               onEditDoc={(doc) => setEditingDoc(doc)}
-              onDownloadDoc={handleDownloadDoc}
               onDeleteDoc={handleSoftDeleteDoc}
               onMoveDocsToFolder={handleMoveDocsToFolder}
               onBulkTrashDocs={handleBulkTrashDocs}
               onBulkDownloadZip={handleBulkDownloadZip}
               onBulkUploadFiles={handleBulkUploadFiles}
               onDismissUploadTray={() => setBulkUploadTasks([])}
-              onGoUpload={() => handleNavigate('upload')}
             />
           )}
 
@@ -2331,15 +2192,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           {section === 'settings' && (
             <SettingsView
               user={user}
+              token={token}
               users={users}
               linkGroups={linkGroups}
               folders={folders}
               taxonomy={taxonomy}
               departments={departments}
               categories={categories}
-              audit={audit}
               systemSummary={systemSummary}
-              geminiSettings={geminiSettings}
               storageMetrics={storageMetrics}
               stepUpActive={Boolean(stepUpToken)}
               provider={provider}
@@ -2356,8 +2216,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onDeleteLinkGroup={handleDeleteLinkGroup}
               onCreateTaxonomyItem={handleCreateTaxonomyItem}
               onDeleteTaxonomyItem={handleDeleteTaxonomyItem}
-              onSaveGeminiSettings={handleSaveGeminiSettings}
-              onTestGeminiSettings={handleTestGeminiSettings}
               onUnlockStorage={handleUnlockStorage}
               onProviderChange={setProvider}
               onSaveProvider={handleSaveProvider}
@@ -2387,6 +2245,11 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           token={token}
           language={locale}
           canPrint={canPrint}
+          onDelete={(() => {
+            const target = docs.find((item) => item.id === previewDoc.id);
+            return target && (user.role === 'admin' || (user.role !== 'viewer' && target.can_manage !== false))
+              ? async () => { await handleSoftDeleteDoc(target); handleClosePreview(); } : undefined;
+          })()}
           onDownload={() => handleDownloadDoc({ id: previewDoc.id, file_name: previewDoc.file_name })}
           onClose={handleClosePreview}
         />

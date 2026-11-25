@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "Archive-Yemany"
+    app_name: str = "Archive YemanY"
     environment: str = "development"
     database_url: str | None = None
     bootstrap_admin_username: str | None = None

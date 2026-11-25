@@ -84,6 +84,8 @@ async def _extract_login_credentials(request: Request) -> tuple[str, str]:
 async def login(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
     username, password = await _extract_login_credentials(request)
     if not username or not password:
+        db.add(AuditLog(action="auth.login_failed", resource_type="auth", detail={"username": username[:120]}))
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -96,12 +98,16 @@ async def login(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
         user = await db.scalar(select(User).where(func.lower(User.username) == username.lower()))
 
     if not user or not user.is_active or not verify_password(password, user.password_hash):
+        db.add(AuditLog(actor_id=user.id if user else None, action="auth.login_failed", resource_type="auth", detail={"username": username[:120], "actor_name": (user.full_name or user.username) if user else username[:120]}))
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    db.add(AuditLog(actor_id=user.id, action="auth.login", resource_type="auth", detail={"actor_name": user.full_name or user.username}))
+    await db.commit()
     token = create_access_token(str(user.id), claims={"role": user.role.value})
     return TokenResponse(access_token=token, user=_serialize_user(user))
 
@@ -184,3 +190,10 @@ async def master_challenge(payload: MasterChallenge, _: Annotated[User, Depends(
         raise HTTPException(status_code=403, detail="Master password is incorrect")
     # Short-lived, scoped step-up token; never return or persist the master password.
     return {"step_up_token": create_access_token("master-admin", expires_minutes=10, claims={"scope": "admin:settings"})}
+
+
+@router.post('/logout')
+async def logout(user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    db.add(AuditLog(actor_id=user.id, action='auth.logout', resource_type='auth', detail={}))
+    await db.commit()
+    return {"ok": True}

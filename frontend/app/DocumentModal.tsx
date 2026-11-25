@@ -25,6 +25,7 @@ export default function DocumentModal({
   language,
   canPrint = false,
   onDownload,
+  onDelete,
   onClose,
 }: {
   doc: PreviewDoc;
@@ -32,12 +33,15 @@ export default function DocumentModal({
   language: LocaleCode;
   canPrint?: boolean;
   onDownload?: () => void;
+  onDelete?: () => Promise<void>;
   onClose: () => void;
 }) {
   const t = getTranslations(language);
   const dir = getDirection(language);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<'preview' | 'text' | 'chat' | 'share'>('preview');
   const [question, setQuestion] = useState('');
   const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
@@ -56,9 +60,14 @@ export default function DocumentModal({
     'Accept-Language': language,
   };
   const isPdf = doc.mime_type === 'application/pdf';
+  const isImage = (doc.mime_type || '').startsWith('image/');
 
-  function handlePrint() {
+  async function handlePrint() {
     if (!canPrint) return;
+    try {
+      const response = await fetch(`/api/v1/documents/${doc.id}/print`, { method: 'POST', headers: auth, cache: 'no-store' });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(localizeApiError(body.detail, response.status, language, t)); }
+    } catch (error: any) { setNotice(error.message || t.errorGeneric); return; }
     if (isPdf && iframeRef.current?.contentWindow) {
       try {
         iframeRef.current.contentWindow.focus();
@@ -203,6 +212,14 @@ export default function DocumentModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {confirmDelete && <div role="alertdialog" aria-modal="true" className="absolute inset-0 z-10 bg-slate-950/75 flex items-center justify-center p-4">
+        <div className="card p-6 max-w-md w-full space-y-4"><h3 className="font-bold">{t.confirmTrashDocTitle}</h3><p className="text-sm">{doc.file_name}</p>
+          <div className="flex gap-2"><button disabled={deleting} className="btn btn-danger" onClick={async () => {
+            setDeleting(true);
+            try { await onDelete?.(); } catch (error: any) { setNotice(error.message || t.errorGeneric); setConfirmDelete(false); } finally { setDeleting(false); }
+          }}>{t.deleteAction}</button><button disabled={deleting} className="btn btn-muted" onClick={() => setConfirmDelete(false)}>{t.cancel}</button></div>
+        </div>
+      </div>}
       <section className="w-full max-w-6xl h-[92vh] bg-white dark:bg-[#0F2137] border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Executive Deep Navy Header Bar */}
         <header className="shrink-0 sidebar-navy text-white px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10">
@@ -236,7 +253,7 @@ export default function DocumentModal({
               <AppIcon name="download" size={15} />
               <span className="hidden sm:inline">{t.download}</span>
             </button>
-            {canPrint && (
+            {canPrint && (isPdf || isImage) && (
               <button
                 type="button"
                 onClick={handlePrint}
@@ -247,6 +264,7 @@ export default function DocumentModal({
                 <span className="hidden sm:inline">{t.print}</span>
               </button>
             )}
+            {onDelete && <button type="button" onClick={() => setConfirmDelete(true)} title={t.deleteAction} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300/30 bg-rose-500/20 hover:bg-rose-500/40 text-white text-xs font-semibold py-2 px-3"><AppIcon name="trash" size={15} /><span className="hidden sm:inline">{t.deleteAction}</span></button>}
             <button
               type="button"
               onClick={onClose}
@@ -274,7 +292,7 @@ export default function DocumentModal({
                 className={`inline-flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                   active
                     ? 'border-[#0E7490] text-[#0E7490] dark:border-[#22D3EE] dark:text-[#22D3EE] bg-white/60 dark:bg-white/[0.03]'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-[#0F2137] dark:hover:text-slate-200'
+                    : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-[#0F2137] dark:hover:text-slate-200'
                 }`}
               >
                 <AppIcon name={item.icon} size={15} />
@@ -297,17 +315,17 @@ export default function DocumentModal({
               <iframe
                 ref={iframeRef}
                 title={doc.file_name}
-                src={doc.objectUrl}
+                src={`${doc.objectUrl}#toolbar=0&navpanes=0`}
                 className="w-full h-full min-h-[60vh] rounded-xl bg-white border border-slate-200/90 dark:border-slate-800 shadow-sm"
               />
-            ) : (
+            ) : isImage ? (
               <img
                 src={doc.objectUrl}
                 alt={doc.file_name}
                 referrerPolicy="no-referrer"
                 className="max-w-full max-h-full object-contain rounded-xl shadow-md bg-white dark:bg-[#0F2137] border border-slate-200/80 dark:border-slate-800 p-1"
               />
-            )}
+            ) : <div className="flex flex-col items-center gap-4 text-slate-600 dark:text-slate-300"><AppIcon name="file" size={64} /><b dir="auto">{doc.file_name}</b></div>}
           </div>
         )}
 
@@ -381,7 +399,7 @@ export default function DocumentModal({
                     <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                       {t.askDocument}
                     </h3>
-                    <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
+                    <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 max-w-md leading-relaxed">
                       {t.askPlaceholder}
                     </p>
                   </div>
@@ -447,7 +465,7 @@ export default function DocumentModal({
                 </span>
                 <div>
                   <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.secureShare}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                     {t.shareHelp}
                   </p>
                 </div>

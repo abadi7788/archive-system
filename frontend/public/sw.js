@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'archive-yemany-shell-v3';
+const CACHE_VERSION = 'archive-yemany-shell-v4';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -64,7 +64,7 @@ self.addEventListener('fetch', (event) => {
           const cached = (await caches.match(request)) || (await caches.match('/'));
           if (cached) return cached;
           return new Response(
-            '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>نظام الأرشفة الإلكتروني</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F1F5F9;color:#0F2137;font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;padding:24px;text-align:center}.box{max-width:460px;background:#fff;border:1px solid #E2E8F0;border-radius:20px;padding:32px;box-shadow:0 16px 40px rgba(15,23,42,.08)}h1{margin:0 0 12px;font-size:20px}p{margin:0 0 20px;color:#475569;line-height:1.8;font-size:14px}button{border:0;border-radius:12px;padding:12px 24px;background:#0E7490;color:#fff;font-weight:700;cursor:pointer;font-family:inherit}</style></head><body><div class="box"><h1>لا يوجد اتصال بالإنترنت</h1><p>يبدو أن الإنترنت منقطع لديك حالياً أو تعذّر الوصول إلى سيرفر الأرشفة. يرجى التحقق من اتصالك ثم المحاولة مجدداً.</p><button onclick="location.reload()">إعادة المحاولة</button></div></body></html>',
+            '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Archive YemanY</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F1F5F9;color:#0F2137;font-family:"Tajawal","Segoe UI",Tahoma,sans-serif;padding:24px;text-align:center}.box{max-width:460px;background:#fff;border:1px solid #E2E8F0;border-radius:20px;padding:32px;box-shadow:0 16px 40px rgba(15,23,42,.08)}h1{margin:0 0 12px;font-size:20px}p{margin:0 0 20px;color:#475569;line-height:1.8;font-size:14px}button{border:0;border-radius:12px;padding:12px 24px;background:#0E7490;color:#fff;font-weight:700;cursor:pointer;font-family:inherit}</style></head><body><div class="box"><h1>لا يوجد اتصال بالإنترنت</h1><p>يبدو أن الإنترنت منقطع لديك حالياً أو تعذّر الوصول إلى سيرفر الأرشفة. يرجى التحقق من اتصالك ثم المحاولة مجدداً.</p><button onclick="location.reload()">إعادة المحاولة</button></div></body></html>',
             { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
           );
         })

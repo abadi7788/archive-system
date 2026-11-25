@@ -73,8 +73,18 @@ async def lifespan(_: FastAPI):
                 if not changed_before:
                     existing_admin.must_change_password = True
                     await session.commit()
-    yield
-    await engine.dispose()
+    import asyncio
+    from app.services.ocr_retry import retry_queued_documents
+    retry_task = asyncio.create_task(retry_queued_documents())
+    try:
+        yield
+    finally:
+        retry_task.cancel()
+        try:
+            await retry_task
+        except asyncio.CancelledError:
+            pass
+        await engine.dispose()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan, docs_url="/docs" if settings.environment != "production" else None, redoc_url=None)
@@ -105,3 +115,40 @@ async def security_and_no_cache_headers(request: Request, call_next):
 @app.get("/api/v1/health", include_in_schema=False)
 async def health():
     return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+
+
+@app.middleware("http")
+async def complete_request_audit(request: Request, call_next):
+    from app.services.audit_context import request_audit, peer_ip
+    from app.models.audit_log import AuditLog
+    from app.db import SessionLocal
+    context = {"ip": peer_ip(request), "user_agent": (request.headers.get("user-agent") or "")[:512], "recorded": False}
+    marker = request_audit.set(context)
+    try:
+        response = await call_next(request)
+        # Existing domain events remain authoritative. Cover previously unaudited writes,
+        # including preferences/settings/grants, but never serialize request bodies.
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 400 and context.get("actor_id") and not context['recorded']:
+            async with SessionLocal() as db:
+                route = request.scope.get('route')
+                template = getattr(route, 'path', request.url.path)
+                db.add(AuditLog(actor_id=context['actor_id'], action='request.' + request.method.lower(),
+                    resource_type=template.split('/')[3] if len(template.split('/')) > 3 else 'system',
+                    detail={"route": template, "method": request.method, "changes": context.get('changes', []), "parameters": {k: str(v) for k, v in request.path_params.items() if 'token' not in k}}))
+                await db.commit()
+        return response
+    finally:
+        request_audit.reset(marker)
+
+
+# FastAPI's default validation errors may echo rejected passwords/API keys in
+# `input` or nested context. Return only the safe fields used by the UI.
+from fastapi.exceptions import RequestValidationError
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": list(error['loc']), "msg": error['msg'], "type": error['type']}
+        for error in exc.errors()
+    ]})

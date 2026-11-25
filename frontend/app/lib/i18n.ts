@@ -355,8 +355,8 @@ export type TranslationKeys = {
 };
 
 const ar: TranslationKeys = {
-  appName: 'نظام الأرشفة الإلكتروني',
-  appShort: 'Archive-Yemany',
+  appName: 'Archive YemanY',
+  appShort: 'Archive YemanY',
   navArchive: 'الأرشيف',
   navUpload: 'رفع مستند',
   navTrash: 'سلة المحذوفات',
@@ -654,8 +654,8 @@ const ar: TranslationKeys = {
 };
 
 const en: TranslationKeys = {
-  appName: 'Electronic Archive',
-  appShort: 'Archive-Yemany',
+  appName: 'Archive YemanY',
+  appShort: 'Archive YemanY',
   navArchive: 'Archive',
   navUpload: 'Upload Document',
   navTrash: 'Recycle Bin',
@@ -954,7 +954,7 @@ const en: TranslationKeys = {
 
 const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
   fr: {
-    appName: 'Archive Électronique',
+    appName: 'Archive YemanY',
     navArchive: 'Archive',
     navUpload: 'Téléverser',
     navTrash: 'Corbeille',
@@ -1022,7 +1022,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Annuler',
   },
   es: {
-    appName: 'Archivo Electrónico',
+    appName: 'Archive YemanY',
     navArchive: 'Archivo',
     navUpload: 'Subir documento',
     navTrash: 'Papelera',
@@ -1090,7 +1090,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Cancelar',
   },
   tr: {
-    appName: 'Elektronik Arşiv',
+    appName: 'Archive YemanY',
     navArchive: 'Arşiv',
     navUpload: 'Belge Yükle',
     navTrash: 'Geri Dönüşüm',
@@ -1158,7 +1158,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'İptal',
   },
   de: {
-    appName: 'Elektronisches Archiv',
+    appName: 'Archive YemanY',
     navArchive: 'Archiv',
     navUpload: 'Dokument hochladen',
     navTrash: 'Papierkorb',
@@ -1226,7 +1226,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Abbrechen',
   },
   ru: {
-    appName: 'Электронный архив',
+    appName: 'Archive YemanY',
     navArchive: 'Архив',
     navUpload: 'Загрузить',
     navTrash: 'Корзина',
@@ -1294,7 +1294,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Отмена',
   },
   zh: {
-    appName: '电子档案系统',
+    appName: 'Archive YemanY',
     navArchive: '档案库',
     navUpload: '上传文档',
     navTrash: '回收站',
@@ -1362,7 +1362,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: '取消',
   },
   ja: {
-    appName: '電子アーカイブ',
+    appName: 'Archive YemanY',
     navArchive: 'アーカイブ',
     navUpload: 'アップロード',
     navTrash: 'ゴミ箱',
@@ -1430,7 +1430,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'キャンセル',
   },
   hi: {
-    appName: 'इलेक्ट्रॉनिक आर्काइव',
+    appName: 'Archive YemanY',
     navArchive: 'आर्काइव',
     navUpload: 'दस्तावेज़ अपलोड',
     navTrash: 'रीसायकल बिन',
@@ -1498,7 +1498,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'रद्द करें',
   },
   ur: {
-    appName: 'الیکٹرانک آرکائیو',
+    appName: 'Archive YemanY',
     navArchive: 'آرکائیو',
     navUpload: 'دستاویز اپ لوڈ',
     navTrash: 'ری سائیکل بن',

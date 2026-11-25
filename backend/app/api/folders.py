@@ -156,6 +156,9 @@ async def create_folder(
     if parent:
         parent.updated_at = now
     db.add(folder)
+    await db.flush()
+    db.add(AuditLog(actor_id=user.id, action="folder.created", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None}))
     await db.commit()
     await db.refresh(folder)
     display_name = (user.full_name or "").strip() or user.username
@@ -207,6 +210,8 @@ async def update_folder(
             folder.parent_id = new_parent.id
             folder.path = new_parent.path.rstrip("/") + "/" + new_parent.name
     folder.updated_at = datetime.now(timezone.utc)
+    db.add(AuditLog(actor_id=user.id, action="folder.updated", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None}))
     await db.commit()
     await db.refresh(folder)
     return {
@@ -267,7 +272,7 @@ async def delete_folder(
 async def set_grant(
     folder_id: uuid.UUID,
     payload: GrantCreate,
-    _: Annotated[User, Depends(admin_user)],
+    actor: Annotated[User, Depends(admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     folder = await db.get(Folder, folder_id)
@@ -282,6 +287,8 @@ async def set_grant(
         grant.permission = payload.permission
     else:
         db.add(FolderGrant(folder_id=folder_id, user_id=payload.user_id, permission=payload.permission))
+    db.add(AuditLog(actor_id=actor.id, action="folder.permissions_updated", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "user_id": str(payload.user_id), "permission": payload.permission}))
     await db.commit()
     return {"folder_id": str(folder_id), "user_id": str(payload.user_id), "permission": payload.permission}
 
