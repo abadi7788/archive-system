@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'archive-yemany-shell-v4';
+const CACHE_VERSION = 'archive-yemany-shell-v5';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -8,6 +8,7 @@ const APP_SHELL = [
   '/icons/apple-touch-icon.png',
   '/icons/favicon.ico',
   '/icons/icon.svg',
+  '/brand/archive-mark.svg',
 ];
 
 self.addEventListener('install', (event) => {

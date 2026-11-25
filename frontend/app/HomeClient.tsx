@@ -117,30 +117,20 @@ function isAllowedUploadFile(file: File): boolean {
   return ALLOWED_UPLOAD_EXTS.has(ext);
 }
 
+// Device choices take precedence per field; account settings seed a new browser only.
+function readDevicePreference(key: string): string | null {
+  try { return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; }
+  catch { return null; }
+}
 function readInitialLocale(propLocale?: LocaleCode): LocaleCode {
-  if (typeof window !== 'undefined') {
-    const saved = window.localStorage.getItem(PREF_LANG_KEY);
-    if (isSupportedLocale(saved)) return saved;
-  }
-  if (propLocale && isSupportedLocale(propLocale)) return propLocale;
-  return 'ar';
+  const saved = readDevicePreference(PREF_LANG_KEY);
+  return isSupportedLocale(saved) ? saved : propLocale && isSupportedLocale(propLocale) ? propLocale : 'ar';
 }
-
 function readHasChosenLanguage(): boolean {
-  if (typeof window !== 'undefined') {
-    if (window.localStorage.getItem(PREF_LANG_CHOSEN_KEY) === '1') return true;
-    const saved = window.localStorage.getItem(PREF_LANG_KEY);
-    if (isSupportedLocale(saved)) return true;
-  }
-  return false;
+  return isSupportedLocale(readDevicePreference(PREF_LANG_KEY));
 }
-
 function readInitialTheme(): ThemeMode {
-  if (typeof window !== 'undefined') {
-    const saved = window.localStorage.getItem(PREF_THEME_KEY);
-    if (saved === 'dark' || saved === 'light') return saved;
-  }
-  return 'light';
+  return readDevicePreference(PREF_THEME_KEY) === 'dark' ? 'dark' : 'light';
 }
 
 export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCode }) {
@@ -150,6 +140,12 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const [locale, setLocale] = useState<LocaleCode>(() => readInitialLocale(initialLocale));
   const [languageChosen, setLanguageChosen] = useState<boolean>(() => readHasChosenLanguage());
   const [theme, setTheme] = useState<ThemeMode>(() => readInitialTheme());
+  const preferenceQueue = useRef<Promise<void>>(Promise.resolve());
+  const sessionEpoch = useRef(0);
+  const deviceChoices = useRef<{ language: LocaleCode | null; theme: ThemeMode | null }>({
+    language: readHasChosenLanguage() ? readInitialLocale(initialLocale) : null,
+    theme: ['light', 'dark'].includes(readDevicePreference(PREF_THEME_KEY) || '') ? readInitialTheme() : null,
+  });
 
   const t = useMemo(() => getTranslations(locale), [locale]);
   const dir = useMemo(() => getDirection(locale), [locale]);
@@ -259,6 +255,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   // Persist user preferences locally
   const applyLocalPreferences = useCallback((nextLocale?: LocaleCode | null, nextTheme?: ThemeMode | null) => {
     if (nextLocale && isSupportedLocale(nextLocale)) {
+      deviceChoices.current.language = nextLocale;
       setLocale(nextLocale);
       setLanguageChosen(true);
       try {
@@ -269,6 +266,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       }
     }
     if (nextTheme === 'light' || nextTheme === 'dark') {
+      deviceChoices.current.theme = nextTheme;
       setTheme(nextTheme);
       try {
         window.localStorage.setItem(PREF_THEME_KEY, nextTheme);
@@ -287,6 +285,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }, []);
 
   const clearSession = useCallback((reason?: string) => {
+    sessionEpoch.current += 1;
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
@@ -317,6 +316,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     setQuery('');
     setFilters(EMPTY_FILTERS);
     setSection('archive');
+    setMobileNavOpen(false);
+    setPreLoginLangOpen(false);
     try {
       window.sessionStorage.removeItem(SESSION_KEY);
     } catch {
@@ -584,37 +585,29 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       setUser(freshUser);
       persistSession(nextToken, freshUser);
 
-      // Sync language/theme permanently between device and DB account
-      if (freshUser.preferred_language && isSupportedLocale(freshUser.preferred_language)) {
-        applyLocalPreferences(freshUser.preferred_language, freshUser.preferred_theme || null);
-        setShowLanguageModal(false);
-      } else {
-        if (freshUser.preferred_theme) {
-          applyLocalPreferences(null, freshUser.preferred_theme);
-        }
-        // Save the device's pre-login chosen language permanently to the user's account
-        const deviceLang = readInitialLocale(initialLocale);
-        if (readHasChosenLanguage() && isSupportedLocale(deviceLang)) {
-          try {
-            const prefRes = await apiFetch(
-              '/auth/preferences',
-              {
-                method: 'PATCH',
-                body: JSON.stringify({ preferred_language: deviceLang }),
-              },
-              nextToken
-            );
-            if (prefRes.ok) {
-              freshUser = await prefRes.json();
-              setUser(freshUser);
-              persistSession(nextToken, freshUser);
-            }
-          } catch {
-            // ignore silent sync failure
+      // Resolve independently: an explicit login/device choice must never be
+      // replaced by an older account value. Missing fields inherit the account.
+      const deviceLanguage = deviceChoices.current.language;
+      const deviceTheme = deviceChoices.current.theme;
+      const resolvedLanguage = isSupportedLocale(deviceLanguage) ? deviceLanguage
+        : isSupportedLocale(freshUser.preferred_language) ? freshUser.preferred_language : readInitialLocale(initialLocale);
+      const resolvedTheme = deviceTheme === 'light' || deviceTheme === 'dark' ? deviceTheme
+        : freshUser.preferred_theme === 'dark' ? 'dark' : 'light';
+      applyLocalPreferences(resolvedLanguage, resolvedTheme);
+      setShowLanguageModal(false);
+      if (freshUser.preferred_language !== resolvedLanguage || freshUser.preferred_theme !== resolvedTheme) {
+        try {
+          const prefRes = await apiFetch('/auth/preferences', {
+            method: 'PATCH',
+            body: JSON.stringify({ preferred_language: resolvedLanguage, preferred_theme: resolvedTheme }),
+          }, nextToken);
+          if (prefRes.ok) {
+            freshUser = await prefRes.json();
+            setUser(freshUser);
+            persistSession(nextToken, freshUser);
           }
-          setShowLanguageModal(false);
-        } else {
-          setShowLanguageModal(true);
+        } catch {
+          // The device choice remains saved and will be retried at next login.
         }
       }
 
@@ -728,6 +721,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   async function handleLogout() {
+    sessionEpoch.current += 1;
     try {
       if (token) await apiFetch('/auth/logout', { method: 'POST' });
     } catch { /* Local logout must still work if server is unreachable. */ }
@@ -741,21 +735,28 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     applyLocalPreferences(prefs.preferred_language || null, prefs.preferred_theme || null);
     if (!token || !user) return;
 
-    const res = await apiFetch('/auth/preferences', {
-      method: 'PATCH',
-      body: JSON.stringify(prefs),
+    // Serialize account writes so rapid language/theme changes cannot finish in
+    // reverse order. Invalidate responses after logout to prevent stale sessions.
+    const epoch = sessionEpoch.current;
+    const operation = preferenceQueue.current.catch(() => {}).then(async () => {
+      if (sessionEpoch.current !== epoch) return;
+      const res = await apiFetch('/auth/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(prefs),
+      }, token);
+      if (!res.ok) {
+        const msg = await parseErrorDetail(res, t.errorGeneric);
+        if (sessionEpoch.current === epoch) pushToast('err', msg);
+        throw new Error(msg);
+      }
+      const updatedUser: User = await res.json();
+      if (sessionEpoch.current !== epoch) return;
+      setUser(updatedUser);
+      persistSession(token, updatedUser);
+      if (prefs.preferred_language) setShowLanguageModal(false);
     });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      pushToast('err', msg);
-      throw new Error(msg);
-    }
-    const updatedUser: User = await res.json();
-    setUser(updatedUser);
-    persistSession(token, updatedUser);
-    if (prefs.preferred_language) {
-      setShowLanguageModal(false);
-    }
+    preferenceQueue.current = operation;
+    await operation;
   }
 
   async function handleChangePassword(currentPassword: string, newPassword: string) {
@@ -1531,23 +1532,27 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         dir={dir}
         className="min-h-[100svh] auth-canvas flex flex-col items-center justify-center p-4 sm:p-6 transition-colors"
       >
-        <main className="card-elevated w-full max-w-5xl overflow-hidden grid lg:grid-cols-[1.05fr_1fr]">
-          <section className="vault-showcase relative p-7 sm:p-12 text-white flex flex-col justify-center min-h-40 lg:min-h-[560px]">
-            <div className="flex items-center gap-3">
-              <BrandMark size={48} />
-              <div>
-                <h2 dir="ltr" className="text-2xl sm:text-3xl font-bold tracking-tight">Archive YemanY</h2>
-              </div>
+        <main className="login-portal w-full max-w-6xl grid lg:grid-cols-[1.08fr_1fr]">
+          <section className="login-identity vault-showcase relative text-white flex flex-col overflow-hidden">
+            <div className="relative z-10 flex items-center gap-3">
+              <BrandMark size={50} />
+              <h2 dir="ltr" className="text-xl sm:text-2xl font-bold tracking-tight">Archive YemanY</h2>
             </div>
-            <div aria-hidden="true" className="hidden lg:flex justify-center py-12">
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-9 shadow-executive">
-                <AppIcon name="archive" size={90} className="text-cyan-200" />
-              </div>
+            <div aria-hidden="true" className="vault-art hidden lg:flex flex-1 items-center justify-center">
+              <div className="vault-orbit vault-orbit-outer" />
+              <div className="vault-orbit vault-orbit-inner" />
+              <div className="vault-document vault-document-back"><span /><span /><span /></div>
+              <div className="vault-document vault-document-front"><span /><span /><span /><span /></div>
+              <div className="vault-emblem"><BrandMark size={160} /></div>
+              <div className="vault-seal"><AppIcon name="key" size={23} /></div>
+            </div>
+            <div aria-hidden="true" className="hidden lg:flex relative z-10 items-center gap-2 text-cyan-200/60">
+              <span className="h-px flex-1 bg-white/15" /><span className="w-1.5 h-1.5 rotate-45 bg-cyan-200/60" /><span className="h-px w-12 bg-white/15" />
             </div>
           </section>
-          <div className="bg-white dark:bg-[#0F2137] p-7 sm:p-10">
-            <div className="flex justify-end gap-2 mb-7">
-              <button type="button" onClick={() => setPreLoginLangOpen(true)} className="btn btn-secondary text-xs gap-2">
+          <div className="login-form-panel bg-white dark:bg-[#0F2137]">
+            <div className="flex justify-end gap-2 mb-8 sm:mb-12">
+              <button type="button" onClick={() => setPreLoginLangOpen(true)} className="btn btn-secondary text-xs gap-2" aria-label={t.languageLabel}>
                 <AppIcon name="globe" size={15} />
                 {LANGUAGES.find((language) => language.code === locale)?.nativeName}
               </button>
@@ -1556,13 +1561,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
               </button>
             </div>
-            <div className="flex flex-col items-center text-center mb-7">
-              <h1 className="mt-4 text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+            <div className="login-form-heading mb-8">
+              <span aria-hidden="true" className="login-heading-rule" />
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                 {t.signInTitle}
               </h1>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="login-form space-y-5">
               <div>
                 <label
                   htmlFor="login-username"
@@ -1617,9 +1623,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               <button
                 type="submit"
                 disabled={loginBusy}
-                className="btn btn-primary w-full py-2.5 text-sm mt-2"
+                className="btn btn-primary w-full py-3.5 text-sm mt-2 justify-between"
               >
-                {loginBusy ? t.signingIn : t.signInButton}
+                <span>{loginBusy ? t.signingIn : t.signInButton}</span>
+                <AppIcon name="chevronLeft" size={18} className={dir === 'ltr' ? 'rotate-180' : ''} />
               </button>
             </form>
             <div className="mt-7 pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
@@ -1746,11 +1753,11 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full sidebar-navy text-slate-200 select-none">
+    <div className="workspace-sidebar flex flex-col h-full sidebar-navy text-slate-200 select-none">
       {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between gap-2.5 border-b border-white/10 shrink-0">
+      <div className="h-20 px-5 flex items-center justify-between gap-2.5 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <BrandMark size={34} compact />
+          <BrandMark size={42} compact />
           <span className="text-sm font-bold text-white tracking-tight truncate">
             {t.appName}
           </span>
@@ -2065,10 +2072,15 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   return (
     <div
       dir={dir}
-      className="h-[100dvh] overflow-hidden bg-[#F1F5F9] dark:bg-[#0A1626] text-slate-900 dark:text-slate-100 flex transition-colors"
+      className="workspace-shell h-[100dvh] overflow-hidden bg-[#F1F5F9] dark:bg-[#0A1626] text-slate-900 dark:text-slate-100 flex transition-colors"
     >
+      {preLoginLangOpen && <LanguageSelectionModal variant="modal" currentLocale={locale} onSelect={async (selectedLocale) => {
+        try { await handleUpdatePreferences({ preferred_language: selectedLocale }); }
+        catch { /* Device choice is retained; the error is shown in a toast. */ }
+        finally { setPreLoginLangOpen(false); }
+      }} />}
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block lg:w-64 shrink-0 sticky top-0 h-[100svh] border-e border-white/10 z-30">
+      <aside className="desktop-sidebar hidden lg:block lg:w-64 shrink-0 z-30">
         {sidebarContent}
       </aside>
 
@@ -2087,7 +2099,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
         {/* Clean Minimal Top Header (NO Language Dropdown) */}
-        <header className="shrink-0 z-20 min-h-16 py-2 bg-white/90 dark:bg-[#0F2137]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="workspace-header shrink-0 z-20 min-h-20 py-2 bg-white/90 dark:bg-[#0F2137]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -2100,12 +2112,16 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             <span className="hidden sm:grid w-9 h-9 rounded-xl bg-brand-50 dark:bg-[#132942] text-brand-600 dark:text-brand-400 place-items-center">
               <AppIcon name={section === 'archive' ? 'archive' : section === 'upload' ? 'upload' : section === 'trash' ? 'trash' : 'settings'} size={17} />
             </span>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
-              {pageTitle}
-            </h1>
+            <div className="min-w-0">
+              <p dir="ltr" className="hidden sm:block text-[10px] font-semibold tracking-[.15em] text-slate-500 dark:text-slate-400 mb-1 w-fit">Archive YemanY</p>
+              <h1 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white truncate">{pageTitle}</h1>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button type="button" className="btn btn-secondary p-2" aria-label={t.languageLabel} title={t.languageLabel} onClick={() => setPreLoginLangOpen(true)}>
+              <AppIcon name="globe" size={16} /><span className="hidden md:inline text-xs">{LANGUAGES.find((language) => language.code === locale)?.nativeName}</span>
+            </button>
             <button type="button" className="btn btn-secondary p-2" title={theme === 'dark' ? t.themeLight : t.themeDark} aria-label={t.appearanceLabel}
               onClick={() => { void handleUpdatePreferences({ preferred_theme: theme === 'dark' ? 'light' : 'dark' }).catch(() => {}); }}>
               <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
