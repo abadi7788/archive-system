@@ -83,7 +83,7 @@ app.add_middleware(
     allow_origins=["http://localhost:3000", "http://frontend:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Admin-Step-Up"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Step-Up", "Accept-Language"],
 )
 app.include_router(api_router, prefix="/api/v1")
 
@@ -96,7 +96,7 @@ async def security_and_no_cache_headers(request: Request, call_next):
     response.headers["Expires"] = "0"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
