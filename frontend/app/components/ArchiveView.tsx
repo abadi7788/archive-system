@@ -1,4 +1,6 @@
 'use client';
+import FileThumbnail from './FileThumbnail';
+import DateField from './DateField';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import { statusDisplayMeta, type TranslationKeys } from '../lib/i18n';
@@ -49,17 +51,14 @@ export default function ArchiveView({
   onCreateFolder,
   onDeleteFolder,
   onPreviewDoc,
-  onPrintDoc,
   onToggleStar,
   onEditDoc,
-  onDownloadDoc,
   onDeleteDoc,
   onMoveDocsToFolder,
   onBulkTrashDocs,
   onBulkDownloadZip,
   onBulkUploadFiles,
   onDismissUploadTray,
-  onGoUpload,
 }: {
   user: User;
   token: string;
@@ -86,17 +85,14 @@ export default function ArchiveView({
   onCreateFolder: (name: string, parentId: string | null) => Promise<void>;
   onDeleteFolder: (folder: FolderItem) => Promise<void>;
   onPreviewDoc: (doc: DocItem) => void;
-  onPrintDoc: (doc: DocItem) => void;
   onToggleStar: (doc: DocItem) => void;
   onEditDoc: (doc: DocItem) => void;
-  onDownloadDoc: (doc: DocItem) => void;
   onDeleteDoc: (doc: DocItem) => Promise<void>;
   onMoveDocsToFolder: (docIds: string[], targetFolderId: string | null) => Promise<void>;
   onBulkTrashDocs: (docIds: string[]) => Promise<void>;
   onBulkDownloadZip: (docIds: string[]) => Promise<void>;
   onBulkUploadFiles: (files: File[], targetFolderId: string | null) => Promise<void>;
   onDismissUploadTray: () => void;
-  onGoUpload: () => void;
 }) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -502,7 +498,7 @@ export default function ArchiveView({
 
   return (
     <div
-      className="relative w-full max-w-[1680px] mx-auto"
+      className="archive-workspace relative w-full h-full min-h-0 mx-auto"
       onDragEnter={handleWorkspaceDragEnter}
       onDragOver={handleWorkspaceDragOver}
       onDragLeave={handleWorkspaceDragLeave}
@@ -518,7 +514,7 @@ export default function ArchiveView({
             <h3 className="text-base font-bold text-[#0F2137] dark:text-white">
               {t.dropFilesHereTitle}
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               {t.dropFilesHereDesc}
             </p>
           </div>
@@ -526,16 +522,16 @@ export default function ArchiveView({
       )}
 
       {/* 2-Column Inner Split (Center Workspace + Opposite Live Document Inspector) */}
-      <div className="flex flex-col xl:flex-row items-start gap-4 lg:gap-5">
+      <div className="flex h-full min-h-0 min-w-0 items-stretch gap-4 lg:gap-5">
         {/* =============================================================== */}
         {/* PANE 2: CENTER WORKSPACE                                         */}
         {/* =============================================================== */}
-        <div className="flex-1 min-w-0 w-full space-y-4">
+        <div className="flex-1 min-w-0 min-h-0 w-full flex flex-col gap-3">
           {/* 1. Executive 4-Card KPI Strip */}
-          <section aria-label="Archive Summary" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <section aria-label="Archive Summary" className="archive-summary shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-[#0E7490]">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
                   {t.statDocuments}
                 </div>
                 <div
@@ -552,7 +548,7 @@ export default function ArchiveView({
 
             <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-amber-500">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
                   {t.statFolders}
                 </div>
                 <div
@@ -569,7 +565,7 @@ export default function ArchiveView({
 
             <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-[#0891B2]">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
                   {t.sizeLabel}
                 </div>
                 <div
@@ -586,7 +582,7 @@ export default function ArchiveView({
 
             <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-emerald-500">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
                   {t.statLinkedEmployees}
                 </div>
                 <div
@@ -603,23 +599,25 @@ export default function ArchiveView({
           </section>
 
           {/* 2. Unified Executive Search & Command Surface */}
-          <section className="card p-3.5 sm:p-4 space-y-3">
+          <section className="archive-search card shrink-0 max-h-[48dvh] overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-3">
             <form
               onSubmit={handleSearchSubmit}
               className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5"
             >
               {/* Search Bar (Ctrl+K shortcut) */}
-              <div className="relative flex-1 min-w-0">
+              <div className="relative flex flex-1 min-w-0 items-center gap-2">
                 <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                   <AppIcon name="search" size={16} />
                 </span>
                 <input
                   ref={searchInputRef}
-                  type="text"
+                  type="search"
+                  enterKeyHint="search"
+                  aria-label={t.searchPlaceholder}
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
                   placeholder={t.searchPlaceholder}
-                  className="field field-icon-start pe-16 text-xs sm:text-sm bg-slate-50/85 dark:bg-[#0B192B]/70 focus:bg-white dark:focus:bg-[#0F2137]"
+                  className="field field-icon-start min-w-0 flex-1 text-xs sm:text-sm bg-slate-50/85 dark:bg-[#0B192B]/70 focus:bg-white dark:focus:bg-[#0F2137]"
                 />
                 {query ? (
                   <button
@@ -636,7 +634,7 @@ export default function ArchiveView({
                 ) : (
                   <kbd
                     dir="ltr"
-                    className="hidden sm:inline-flex pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 items-center px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#132942] text-[10px] font-semibold text-slate-400 dark:text-slate-400"
+                    className="hidden md:inline-flex shrink-0 pointer-events-none items-center px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#132942] text-[11px] font-semibold text-slate-400 dark:text-slate-400"
                   >
                     Ctrl+K
                   </kbd>
@@ -645,15 +643,6 @@ export default function ArchiveView({
 
               {/* Action Controls */}
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="btn btn-muted py-2 px-3.5 text-xs whitespace-nowrap shrink-0"
-                >
-                  <AppIcon name="search" size={14} />
-                  <span>{busy ? t.searching : t.searchButton}</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => setFiltersOpen((v) => !v)}
@@ -668,7 +657,7 @@ export default function ArchiveView({
                   {activeFiltersCount > 0 && (
                     <span
                       dir="ltr"
-                      className="ms-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md bg-[#0E7490] text-white text-[10px] font-bold tabular-nums"
+                      className="ms-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md bg-[#0E7490] text-white text-[11px] font-bold tabular-nums"
                     >
                       {activeFiltersCount}
                     </span>
@@ -686,16 +675,6 @@ export default function ArchiveView({
                   </button>
                 )}
 
-                {canCreate && (
-                  <button
-                    type="button"
-                    onClick={onGoUpload}
-                    className="btn btn-primary py-2 px-4 text-xs whitespace-nowrap shrink-0"
-                  >
-                    <AppIcon name="plus" size={15} />
-                    <span>{t.uploadDocument}</span>
-                  </button>
-                )}
               </div>
             </form>
 
@@ -786,7 +765,7 @@ export default function ArchiveView({
                     className={`p-1.5 rounded-md transition-colors ${
                       viewMode === 'list'
                         ? 'bg-white dark:bg-[#183350] text-[#0E7490] dark:text-[#22D3EE] shadow-sm'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-[#0F2137] dark:hover:text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-[#0F2137] dark:hover:text-white'
                     }`}
                   >
                     <AppIcon name="list" size={15} />
@@ -799,7 +778,7 @@ export default function ArchiveView({
                     className={`p-1.5 rounded-md transition-colors ${
                       viewMode === 'grid'
                         ? 'bg-white dark:bg-[#183350] text-[#0E7490] dark:text-[#22D3EE] shadow-sm'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-[#0F2137] dark:hover:text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-[#0F2137] dark:hover:text-white'
                     }`}
                   >
                     <AppIcon name="grid" size={15} />
@@ -810,7 +789,7 @@ export default function ArchiveView({
 
             {/* Collapsible Advanced Filters Panel */}
             {filtersOpen && (
-              <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <form onSubmit={(event) => { event.preventDefault(); onSearch(); }} className="pt-3 border-t border-slate-200/80 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     {t.departmentLabel}
@@ -820,7 +799,7 @@ export default function ArchiveView({
                     onChange={(e) => {
                       const next = { ...filters, department: e.target.value };
                       onFiltersChange(next);
-                      onSearch(selectedFolder, query, next);
+
                     }}
                     className="field text-xs py-2 min-h-[38px]"
                   >
@@ -833,27 +812,6 @@ export default function ArchiveView({
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    {t.fileTypeLabel}
-                  </label>
-                  <select
-                    value={filters.mime_type}
-                    onChange={(e) => {
-                      const next = { ...filters, mime_type: e.target.value };
-                      onFiltersChange(next);
-                      onSearch(selectedFolder, query, next);
-                    }}
-                    className="field text-xs py-2 min-h-[38px]"
-                  >
-                    <option value="">{t.allFileTypes}</option>
-                    <option value="application/pdf">PDF</option>
-                    <option value="image/jpeg">JPEG</option>
-                    <option value="image/png">PNG</option>
-                    <option value="image/webp">WEBP</option>
-                    <option value="image/tiff">TIFF</option>
-                  </select>
-                </div>
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -864,7 +822,7 @@ export default function ArchiveView({
                     onChange={(e) => {
                       const next = { ...filters, classification: e.target.value };
                       onFiltersChange(next);
-                      onSearch(selectedFolder, query, next);
+
                     }}
                     className="field text-xs py-2 min-h-[38px]"
                   >
@@ -887,7 +845,7 @@ export default function ArchiveView({
                       onChange={(e) => {
                         const next = { ...filters, owner_id: e.target.value };
                         onFiltersChange(next);
-                        onSearch(selectedFolder, query, next);
+
                       }}
                       className="field text-xs py-2 min-h-[38px]"
                     >
@@ -901,37 +859,18 @@ export default function ArchiveView({
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    {t.keywordLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={filters.keyword}
-                    onChange={(e) => onFiltersChange({ ...filters, keyword: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        onSearch();
-                      }
-                    }}
-                    placeholder={t.keywordPlaceholder}
-                    className="field text-xs py-2 min-h-[38px]"
-                  />
-                </div>
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     {t.fromDate}
                   </label>
-                  <input
-                    type="date"
-                    dir="ltr"
+                  <DateField
+                    label={t.fromDate}
                     value={filters.from_date}
-                    onChange={(e) => {
-                      const next = { ...filters, from_date: e.target.value };
+                    onChange={(value) => {
+                      const next = { ...filters, from_date: value };
                       onFiltersChange(next);
-                      onSearch(selectedFolder, query, next);
+
                     }}
                     className="field text-xs py-2 min-h-[38px] tabular-nums"
                   />
@@ -941,14 +880,13 @@ export default function ArchiveView({
                   <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     {t.toDate}
                   </label>
-                  <input
-                    type="date"
-                    dir="ltr"
+                  <DateField
+                    label={t.toDate}
                     value={filters.to_date}
-                    onChange={(e) => {
-                      const next = { ...filters, to_date: e.target.value };
+                    onChange={(value) => {
+                      const next = { ...filters, to_date: value };
                       onFiltersChange(next);
-                      onSearch(selectedFolder, query, next);
+
                     }}
                     className="field text-xs py-2 min-h-[38px] tabular-nums"
                   />
@@ -956,11 +894,10 @@ export default function ArchiveView({
 
                 <div className="flex items-end gap-2">
                   <button
-                    type="button"
-                    onClick={() => onSearch()}
+                    type="submit"
                     className="btn btn-primary py-2 px-3 text-xs flex-1"
                   >
-                    {t.searchButton}
+                    {dir === 'rtl' ? 'تطبيق الفلاتر' : 'Apply filters'}
                   </button>
                   <button
                     type="button"
@@ -970,7 +907,7 @@ export default function ArchiveView({
                     {t.clear}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
 
             {/* Inline New Folder Creator */}
@@ -1082,7 +1019,7 @@ export default function ArchiveView({
           )}
 
           {/* 3. Elevated White Explorer Card (List Table OR Architectural Card Grid) */}
-          <section className="card overflow-hidden">
+          <section className="card flex-1 min-h-0 overflow-hidden flex flex-col">
             {/* Explorer Top Header: Breadcrumbs OR Bulk Selection Action Bar */}
             {checkedDocIds.length > 0 ? (
               <div className="px-4 py-2.5 border-b border-brand-200 dark:border-[#0891B2]/45 bg-brand-50/90 dark:bg-[#132942] flex flex-wrap items-center justify-between gap-2.5">
@@ -1222,10 +1159,10 @@ export default function ArchiveView({
             {/* VIEW MODE A: EXECUTIVE HIGH-CLARITY TABLE                   */}
             {/* =========================================================== */}
             {viewMode === 'list' ? (
-              <div className="overflow-x-auto">
+              <div className="flex-1 min-h-0 overflow-auto overscroll-contain file-list-scroll">
                 <table className="w-full text-start border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-[#0B192B]/40">
+                    <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-[#0B192B]/40">
                       <th className="py-2.5 ps-4 pe-1 w-9 text-center">
                         <input
                           type="checkbox"
@@ -1322,7 +1259,7 @@ export default function ArchiveView({
                                 <div className="font-semibold text-[#0F2137] dark:text-slate-100 truncate">
                                   {folder.name}
                                 </div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 tabular-nums">
+                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 mt-0.5 tabular-nums">
                                   <span>
                                     {folder.item_count || 0} {t.itemsCount}
                                   </span>
@@ -1338,7 +1275,7 @@ export default function ArchiveView({
                               </div>
                             </div>
                           </td>
-                          <td className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 hidden md:table-cell">
+                          <td className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden md:table-cell">
                             {t.foldersTitle}
                           </td>
                           {showOwnerColumn && (
@@ -1348,7 +1285,7 @@ export default function ArchiveView({
                           )}
                           <td
                             dir="ltr"
-                            className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 hidden sm:table-cell whitespace-nowrap tabular-nums text-start"
+                            className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden sm:table-cell whitespace-nowrap tabular-nums text-start"
                           >
                             {formatDateISO(folder.updated_at)}
                           </td>
@@ -1452,7 +1389,7 @@ export default function ArchiveView({
                                   {doc.file_name}
                                 </div>
 
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
                                   {doc.folder_breadcrumb && (
                                     <>
                                       <span className="truncate max-w-[200px]" dir="auto">
@@ -1482,7 +1419,7 @@ export default function ArchiveView({
                           <td className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden md:table-cell align-top">
                             <div className="truncate max-w-[140px]">{doc.department || '—'}</div>
                             {doc.classification && (
-                              <div className="text-[11px] text-[#0E7490] dark:text-[#22D3EE] truncate max-w-[140px] mt-0.5">
+                              <div className="text-xs font-medium text-[#0E7490] dark:text-[#22D3EE] truncate max-w-[140px] mt-0.5">
                                 {doc.classification}
                               </div>
                             )}
@@ -1496,7 +1433,7 @@ export default function ArchiveView({
 
                           <td
                             dir="ltr"
-                            className="py-3 px-3 text-xs text-slate-500 dark:text-slate-400 hidden sm:table-cell align-top whitespace-nowrap tabular-nums text-start"
+                            className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden sm:table-cell align-top whitespace-nowrap tabular-nums text-start"
                           >
                             {formatDateISO(doc.created_at)}
                           </td>
@@ -1527,20 +1464,6 @@ export default function ArchiveView({
                                 <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={14} />
                               </button>
 
-                              {canPrint && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onPrintDoc(doc);
-                                  }}
-                                  title={t.print}
-                                  aria-label={t.print}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-[#0E7490] dark:hover:text-[#22D3EE] hover:bg-brand-50 dark:hover:bg-white/10 transition-colors"
-                                >
-                                  <AppIcon name="printer" size={14} />
-                                </button>
-                              )}
 
                               <button
                                 type="button"
@@ -1554,21 +1477,6 @@ export default function ArchiveView({
                               >
                                 <AppIcon name="eye" size={14} />
                               </button>
-
-                              {canManageDoc && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDocToTrash(doc);
-                                  }}
-                                  title={t.moveToTrash}
-                                  aria-label={t.moveToTrash}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
-                                >
-                                  <AppIcon name="trash" size={14} />
-                                </button>
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -1594,7 +1502,7 @@ export default function ArchiveView({
                           <h3 className="text-sm font-bold text-[#0F2137] dark:text-slate-100">
                             {t.emptyArchiveTitle}
                           </h3>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
                             {hasActiveSearch ? t.emptySearchDesc : t.emptyArchiveDesc}
                           </p>
                           <div className="mt-4 flex items-center justify-center gap-2">
@@ -1602,14 +1510,7 @@ export default function ArchiveView({
                               <button type="button" onClick={handleFullReset} className="btn btn-muted text-xs">
                                 {t.clear}
                               </button>
-                            ) : (
-                              canCreate && (
-                                <button type="button" onClick={onGoUpload} className="btn btn-primary text-xs">
-                                  <AppIcon name="plus" size={14} />
-                                  <span>{t.uploadDocument}</span>
-                                </button>
-                              )
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -1621,11 +1522,11 @@ export default function ArchiveView({
               /* =========================================================== */
               /* VIEW MODE B: ARCHITECTURAL LUXURY CARD GRID                 */
               /* =========================================================== */
-              <div className="p-4 sm:p-5 space-y-5 bg-[#F8FAFC]/60 dark:bg-[#0B192B]/30">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-5 bg-[#F8FAFC]/60 dark:bg-[#0B192B]/30">
                 {/* Subfolder Cards */}
                 {childFolders.length > 0 && (
                   <div className="space-y-2.5">
-                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                       {t.foldersTitle} ({childFolders.length})
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1659,7 +1560,7 @@ export default function ArchiveView({
                                 <div className="text-sm font-bold text-[#0F2137] dark:text-white truncate">
                                   {folder.name}
                                 </div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">
+                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
                                   {folder.item_count || 0} {t.itemsCount}
                                 </div>
                               </div>
@@ -1688,7 +1589,7 @@ export default function ArchiveView({
                 {displayedDocs.length > 0 && (
                   <div className="space-y-2.5">
                     {childFolders.length > 0 && (
-                      <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                         {t.filesTitle} ({displayedDocs.length})
                       </h3>
                     )}
@@ -1729,6 +1630,7 @@ export default function ArchiveView({
                           >
                             <div>
                               {/* Card Top Row */}
+                              <FileThumbnail doc={doc} token={token} />
                               <div className="flex items-center justify-between gap-2 mb-3">
                                 <div className="flex items-center gap-2.5">
                                   <input
@@ -1798,12 +1700,12 @@ export default function ArchiveView({
                               {(doc.department || doc.classification) && (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
                                   {doc.department && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-[#0B192B] text-slate-600 dark:text-slate-300 truncate max-w-[130px]">
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-[#0B192B] text-slate-600 dark:text-slate-300 truncate max-w-[130px]">
                                       {doc.department}
                                     </span>
                                   )}
                                   {doc.classification && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] truncate max-w-[130px]">
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] truncate max-w-[130px]">
                                       {doc.classification}
                                     </span>
                                   )}
@@ -1812,7 +1714,7 @@ export default function ArchiveView({
 
                               {snippetText && (
                                 <p
-                                  className="mt-2 text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed"
+                                  className="mt-2 text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed"
                                   dir="auto"
                                 >
                                   {renderHighlightedText(snippetText, query)}
@@ -1821,7 +1723,7 @@ export default function ArchiveView({
                             </div>
 
                             {/* Card Footer */}
-                            <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
                               <span className={`inline-flex items-center gap-1 font-semibold ${statusMeta.textClass}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
                                 <span>{statusMeta.label}</span>
@@ -1846,7 +1748,7 @@ export default function ArchiveView({
                     <h3 className="text-sm font-bold text-[#0F2137] dark:text-slate-100">
                       {t.emptyArchiveTitle}
                     </h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
                       {hasActiveSearch ? t.emptySearchDesc : t.emptyArchiveDesc}
                     </p>
                   </div>
@@ -1859,7 +1761,7 @@ export default function ArchiveView({
         {/* =============================================================== */}
         {/* PANE 3: LIVE DOCUMENT INSPECTOR (Desktop Sticky Pane)           */}
         {/* =============================================================== */}
-        <aside className="hidden xl:block w-[350px] 2xl:w-[385px] shrink-0 sticky top-20">
+        <aside className="hidden xl:block w-[310px] 2xl:w-[360px] min-h-0 h-full overflow-y-auto overscroll-contain shrink-0">
           <DocumentInspector
             doc={selectedDoc}
             token={token}
@@ -1869,11 +1771,8 @@ export default function ArchiveView({
             t={t}
             dir={dir}
             onOpenFullPreview={onPreviewDoc}
-            onPrintDoc={onPrintDoc}
             onToggleStar={onToggleStar}
-            onDownload={onDownloadDoc}
             onEdit={onEditDoc}
-            onRequestDelete={(doc) => setDocToTrash(doc)}
           />
         </aside>
       </div>
@@ -1899,15 +1798,12 @@ export default function ArchiveView({
                 setMobileInspectorOpen(false);
                 onPreviewDoc(doc);
               }}
-              onPrintDoc={onPrintDoc}
-              onToggleStar={onToggleStar}
-              onDownload={onDownloadDoc}
-              onEdit={(doc) => {
+                onToggleStar={onToggleStar}
+                onEdit={(doc) => {
                 setMobileInspectorOpen(false);
                 onEditDoc(doc);
               }}
-              onRequestDelete={(doc) => setDocToTrash(doc)}
-              onCloseMobile={() => setMobileInspectorOpen(false)}
+                onCloseMobile={() => setMobileInspectorOpen(false)}
             />
           </div>
         </div>
@@ -1990,7 +1886,7 @@ export default function ArchiveView({
                 <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                   {t.bulkTrashModalTitle} ({manageableCheckedIds.length})
                 </h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {t.bulkTrashModalDesc}
                 </p>
               </div>
@@ -2040,7 +1936,7 @@ export default function ArchiveView({
                 <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                   {docToTrash ? t.confirmTrashDocTitle : t.confirmTrashFolderTitle}
                 </h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {docToTrash ? t.confirmTrashDocDesc : t.confirmTrashFolderDesc}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-[#0F2137] dark:text-slate-200 truncate">

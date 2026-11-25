@@ -444,3 +444,147 @@ def get_storage_provider() -> str:
 
 def set_storage_provider(provider: str) -> None:
     _storage.ACTIVE_PROVIDER = provider
+
+# Managed key pool. Responses contain masked values only; never plaintext secrets.
+class PoolKeyCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    api_key: SecretStr = Field(min_length=20, max_length=256)
+    daily_limit: int = Field(default=1500, ge=1, le=1000000)
+
+
+class PoolKeyUpdate(BaseModel):
+    is_active: bool | None = None
+    daily_limit: int | None = Field(default=None, ge=1, le=1000000)
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+@router.get('/gemini-keys')
+async def list_gemini_keys(actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    from app.services.gemini_usage import usage_snapshot
+    result = []
+    rows = (await db.scalars(select(SystemAPIKey).order_by(SystemAPIKey.priority))).all()
+    for row in rows:
+        try:
+            value = decrypt_secret(row.key_encrypted)
+            stats = await usage_snapshot(db, value)
+        except ValueError:
+            stats = {"status": "disabled", "requests_today": 0, "daily_limit": 1500, "remaining_estimate": 0}
+            value = ''
+        result.append({"id": str(row.id), "label": row.label, "kind": "system", "is_active": row.is_active,
+                       "masked_key": _mask_key(value), **stats,
+                       "status": stats['status'] if row.is_active else 'disabled'})
+    users = (await db.scalars(select(User).where(User.gemini_key_encrypted.is_not(None)))).all()
+    for user in users:
+        try:
+            value = decrypt_secret(user.gemini_key_encrypted)
+        except ValueError:
+            continue
+        stats = await usage_snapshot(db, value)
+        result.append({"id": str(user.id), "label": user.full_name or user.username, "kind": "user",
+                       "is_active": user.is_active, "masked_key": _mask_key(value), **stats,
+                       "status": stats['status'] if user.is_active else 'disabled'})
+    from app.services.gemini_usage import fingerprint
+    managed = set()
+    for row in rows:
+        try:
+            managed.add(fingerprint(decrypt_secret(row.key_encrypted)))
+        except ValueError:
+            pass
+    for index, value in enumerate(settings.system_gemini_keys, 1):
+        if fingerprint(value) in managed:
+            continue
+        stats = await usage_snapshot(db, value)
+        result.append({"id": fingerprint(value), "label": f"Environment fallback {index}", "kind": "environment", "is_active": True,
+                       "masked_key": _mask_key(value), **stats})
+    return result
+
+
+@router.post('/gemini-keys', status_code=201)
+async def create_gemini_key(payload: PoolKeyCreate, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    from app.services.gemini_usage import locked_usage, fingerprint
+    # Transaction advisory lock serializes priority allocation, including across workers.
+    from sqlalchemy import text
+    await db.execute(text("SELECT pg_advisory_xact_lock(726194)"))
+    value = payload.api_key.get_secret_value().strip()
+    if not payload.label.strip() or len(value) < 20:
+        raise HTTPException(422, 'Invalid key label or key format')
+    for existing in (await db.scalars(select(SystemAPIKey))).all():
+        try:
+            duplicate = fingerprint(decrypt_secret(existing.key_encrypted)) == fingerprint(value)
+        except ValueError:
+            continue
+        if duplicate:
+            raise HTTPException(409, "API key already exists")
+    priority = int(await db.scalar(select(func.max(SystemAPIKey.priority))) or 0) + 1
+    row = SystemAPIKey(label=payload.label.strip(), key_encrypted=encrypt_secret(value), priority=priority, is_active=True)
+    db.add(row)
+    await db.flush()
+    usage = await locked_usage(db, value)
+    usage.daily_limit = payload.daily_limit
+    db.add(AuditLog(actor_id=actor.id, action='gemini_key.created', resource_type='system_api_key', resource_id=str(row.id), detail={"label": row.label, "daily_limit": payload.daily_limit}))
+    await db.commit()
+    return {"id": str(row.id)}
+
+
+@router.patch('/gemini-keys/{key_id}')
+async def update_gemini_key(key_id: str, payload: PoolKeyUpdate, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)], kind: str = 'system'):
+    import uuid
+    from app.services.gemini_usage import locked_usage
+    if kind == 'environment':
+        from app.services.gemini_usage import fingerprint
+        value = next((key for key in settings.system_gemini_keys if fingerprint(key) == key_id), None)
+        if not value:
+            raise HTTPException(404, 'Key not found')
+        if payload.is_active is not None or payload.label is not None:
+            raise HTTPException(422, 'Environment keys are managed through deployment configuration')
+        usage = await locked_usage(db, value)
+        if payload.daily_limit is not None:
+            usage.daily_limit = payload.daily_limit
+        db.add(AuditLog(actor_id=actor.id, action='gemini_key.updated', resource_type='environment_api_key', detail={"daily_limit": payload.daily_limit}))
+        await db.commit()
+        return {"ok": True}
+    if kind not in {'system', 'user'}:
+        raise HTTPException(422, 'Invalid key kind')
+    try:
+        uid = uuid.UUID(key_id)
+    except ValueError:
+        raise HTTPException(422, 'Invalid key id')
+    row = await db.get(SystemAPIKey if kind == 'system' else User, uid)
+    if not row:
+        raise HTTPException(404, 'Key not found')
+    encrypted = row.key_encrypted if kind == 'system' else row.gemini_key_encrypted
+    if not encrypted:
+        raise HTTPException(404, 'Key not found')
+    usage = await locked_usage(db, decrypt_secret(encrypted))
+    if payload.label is not None and not payload.label.strip():
+        raise HTTPException(422, 'Key label is required')
+    if payload.daily_limit is not None:
+        usage.daily_limit = payload.daily_limit
+    if kind == 'system':
+        if payload.is_active is not None:
+            row.is_active = payload.is_active
+            if payload.is_active:
+                usage.provider_disabled = False
+        if payload.label is not None:
+            row.label = payload.label.strip()
+    elif payload.is_active is not None:
+        raise HTTPException(422, 'Personal key is managed in user settings')
+    db.add(AuditLog(actor_id=actor.id, action='gemini_key.updated', resource_type=kind + '_api_key', resource_id=key_id, detail=payload.model_dump(exclude_none=True)))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete('/gemini-keys/{key_id}')
+async def delete_gemini_key(key_id: str, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    import uuid
+    try:
+        uid = uuid.UUID(key_id)
+    except ValueError:
+        raise HTTPException(422, 'Invalid key id')
+    row = await db.get(SystemAPIKey, uid)
+    if not row:
+        raise HTTPException(404, 'Key not found')
+    db.add(AuditLog(actor_id=actor.id, action='gemini_key.deleted', resource_type='system_api_key', resource_id=key_id, detail={"label": row.label}))
+    await db.delete(row)
+    await db.commit()
+    return {"ok": True}

@@ -1,0 +1,2 @@
+# PDF fixtures have byte-offset cross-reference tables; do not normalize them.
+*.pdf binary

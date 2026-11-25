@@ -2,10 +2,10 @@ import '@fontsource/plus-jakarta-sans/400.css';
 import '@fontsource/plus-jakarta-sans/500.css';
 import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
-import '@fontsource/ibm-plex-sans-arabic/400.css';
-import '@fontsource/ibm-plex-sans-arabic/500.css';
-import '@fontsource/ibm-plex-sans-arabic/600.css';
-import '@fontsource/ibm-plex-sans-arabic/700.css';
+import '@fontsource/tajawal/400.css';
+import '@fontsource/tajawal/500.css';
+import '@fontsource/tajawal/800.css';
+import '@fontsource/tajawal/700.css';
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import PwaRegister from './components/PwaRegister';
@@ -17,8 +17,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  applicationName: 'Archive-Yemany',
-  title: 'نظام الأرشفة الإلكتروني — Archive-Yemany',
+  applicationName: 'Archive YemanY',
+  title: 'Archive YemanY',
   description:
     'منصة أرشفة مؤسسية آمنة لإدارة المستندات والمجلدات والبحث الذكي في المحتوى باللغتين العربية والإنجليزية.',
   manifest: '/manifest.webmanifest',
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'الأرشيف',
+    title: 'Archive YemanY',
   },
 };
 

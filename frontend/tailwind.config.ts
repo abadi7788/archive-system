@@ -9,8 +9,8 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: [
+          '"Tajawal"',
           '"Plus Jakarta Sans"',
-          '"IBM Plex Sans Arabic"',
           'system-ui',
           '-apple-system',
           'sans-serif',

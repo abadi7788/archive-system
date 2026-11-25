@@ -1,13 +1,13 @@
 'use client';
-import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import GeminiKeyPanel from './GeminiKeyPanel';
+import AuditPanel from './AuditPanel';
+import React, { FormEvent, useMemo, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import { LANGUAGES, roleDisplayLabel, type TranslationKeys } from '../lib/i18n';
 import PasswordInput, { validateFlexiblePassword } from './PasswordInput';
 import {
-  AuditItem,
   EmployeeLinkGroup,
   FolderItem,
-  GeminiSettings,
   LocaleCode,
   StorageMetrics,
   SystemSummary,
@@ -16,7 +16,6 @@ import {
   User,
   formatBytes,
   formatDateISO,
-  formatDateTimeISO,
 } from './types';
 
 type SettingsTab = 'account' | 'admin';
@@ -24,15 +23,14 @@ type AdminSubTab = 'users' | 'linking' | 'gemini' | 'storage' | 'taxonomy' | 're
 
 export default function SettingsView({
   user,
+  token,
   users,
   linkGroups,
   folders,
   taxonomy,
   departments,
   categories,
-  audit,
   systemSummary,
-  geminiSettings,
   storageMetrics,
   stepUpActive,
   provider,
@@ -47,8 +45,6 @@ export default function SettingsView({
   onCreateLinkGroup,
   onUpdateLinkGroup,
   onDeleteLinkGroup,
-  onSaveGeminiSettings,
-  onTestGeminiSettings,
   onUnlockStorage,
   onProviderChange,
   onSaveProvider,
@@ -62,15 +58,14 @@ export default function SettingsView({
   onRefreshAdmin,
 }: {
   user: User;
+  token: string;
   users: User[];
   linkGroups: EmployeeLinkGroup[];
   folders: FolderItem[];
   taxonomy: TaxonomyData;
   departments: string[];
   categories: string[];
-  audit: AuditItem[];
   systemSummary: SystemSummary | null;
-  geminiSettings: GeminiSettings | null;
   storageMetrics: StorageMetrics | null;
   stepUpActive: boolean;
   provider: string;
@@ -88,6 +83,7 @@ export default function SettingsView({
     role: string;
     department: string;
     can_print: boolean;
+    gemini_api_key?: string;
   }) => Promise<void>;
   onUpdateUser: (
     userId: string,
@@ -100,17 +96,12 @@ export default function SettingsView({
       is_active?: boolean;
       can_print?: boolean;
       password?: string;
+      gemini_api_key?: string;
     }
   ) => Promise<void>;
   onCreateLinkGroup: (name: string, memberIds: string[]) => Promise<void>;
   onUpdateLinkGroup: (groupId: string, name: string, memberIds: string[]) => Promise<void>;
   onDeleteLinkGroup: (groupId: string) => Promise<void>;
-  onSaveGeminiSettings: (payload: {
-    api_key?: string;
-    is_enabled: boolean;
-    clear_key?: boolean;
-  }) => Promise<{ message: string }>;
-  onTestGeminiSettings: (apiKey?: string) => Promise<{ ok: boolean; message: string }>;
   onUnlockStorage: (masterPassword: string) => Promise<void>;
   onProviderChange: (val: string) => void;
   onSaveProvider: () => Promise<void>;
@@ -146,6 +137,7 @@ export default function SettingsView({
   const [uRole, setURole] = useState('archiver');
   const [uDept, setUDept] = useState('');
   const [uCanPrint, setUCanPrint] = useState(false);
+  const [uGeminiKey, setUGeminiKey] = useState('');
   const [uBusy, setUBusy] = useState(false);
   const [uNotice, setUNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -158,6 +150,8 @@ export default function SettingsView({
   const [editDept, setEditDept] = useState('');
   const [editCanPrint, setEditCanPrint] = useState(false);
   const [editPass, setEditPass] = useState('');
+  const [editGeminiKey, setEditGeminiKey] = useState('');
+  const [clearPersonalKey, setClearPersonalKey] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
 
   // Admin Employee Data Linking Form
@@ -166,19 +160,6 @@ export default function SettingsView({
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
-
-  // Admin Gemini API Key Settings
-  const [geminiKeyInput, setGeminiKeyInput] = useState('');
-  const [geminiEnabled, setGeminiEnabled] = useState(true);
-  const [geminiBusy, setGeminiBusy] = useState(false);
-  const [geminiTesting, setGeminiTesting] = useState(false);
-  const [geminiMsg, setGeminiMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  useEffect(() => {
-    if (geminiSettings) {
-      setGeminiEnabled(geminiSettings.has_db_key ? geminiSettings.is_enabled : true);
-    }
-  }, [geminiSettings]);
 
   // Storage / Taxonomy / Reindex
   const [masterPass, setMasterPass] = useState('');
@@ -261,6 +242,7 @@ export default function SettingsView({
         role: uRole,
         department: uDept.trim(),
         can_print: uRole === 'admin' ? true : uCanPrint,
+        ...(uGeminiKey.trim() ? { gemini_api_key: uGeminiKey.trim() } : {}),
       });
       setUName('');
       setUFullName('');
@@ -269,6 +251,7 @@ export default function SettingsView({
       setUDept('');
       setURole('archiver');
       setUCanPrint(false);
+      setUGeminiKey('');
       setUNotice({ type: 'ok', text: t.savedSuccess });
     } catch (e: any) {
       setUNotice({ type: 'err', text: e?.message || t.errorGeneric });
@@ -286,6 +269,8 @@ export default function SettingsView({
     setEditDept(target.department || '');
     setEditCanPrint(Boolean(target.role === 'admin' || target.can_print));
     setEditPass('');
+    setEditGeminiKey('');
+    setClearPersonalKey(false);
   }
 
   async function handleSaveEditUser(e: FormEvent) {
@@ -308,6 +293,7 @@ export default function SettingsView({
         department: editDept.trim() || null,
         can_print: editRole === 'admin' ? true : editCanPrint,
         ...(editPass.trim() ? { password: editPass } : {}),
+        ...(clearPersonalKey ? { gemini_api_key: '' } : editGeminiKey.trim() ? { gemini_api_key: editGeminiKey.trim() } : {}),
       });
       setEditingUser(null);
       setUNotice({ type: 'ok', text: t.savedSuccess });
@@ -349,55 +335,6 @@ export default function SettingsView({
       resetGroupForm();
     } finally {
       setLinkBusy(false);
-    }
-  }
-
-  async function handleSaveGemini(e: FormEvent) {
-    e.preventDefault();
-    setGeminiMsg(null);
-    if (!geminiKeyInput.trim() && !geminiSettings?.has_db_key) {
-      setGeminiMsg({ type: 'err', text: t.errorGeneric });
-      return;
-    }
-    setGeminiBusy(true);
-    try {
-      const res = await onSaveGeminiSettings({
-        ...(geminiKeyInput.trim() ? { api_key: geminiKeyInput.trim() } : {}),
-        is_enabled: geminiEnabled,
-      });
-      setGeminiKeyInput('');
-      setGeminiMsg({ type: 'ok', text: res.message || t.savedSuccess });
-    } catch (err: any) {
-      setGeminiMsg({ type: 'err', text: err?.message || t.errorGeneric });
-    } finally {
-      setGeminiBusy(false);
-    }
-  }
-
-  async function handleTestGemini() {
-    setGeminiMsg(null);
-    setGeminiTesting(true);
-    try {
-      const res = await onTestGeminiSettings(geminiKeyInput.trim() || undefined);
-      setGeminiMsg({ type: res.ok ? 'ok' : 'err', text: res.message });
-    } catch (err: any) {
-      setGeminiMsg({ type: 'err', text: err?.message || t.errorGeneric });
-    } finally {
-      setGeminiTesting(false);
-    }
-  }
-
-  async function handleClearGeminiKey() {
-    setGeminiMsg(null);
-    setGeminiBusy(true);
-    try {
-      const res = await onSaveGeminiSettings({ is_enabled: false, clear_key: true });
-      setGeminiKeyInput('');
-      setGeminiMsg({ type: 'ok', text: res.message || t.savedSuccess });
-    } catch (err: any) {
-      setGeminiMsg({ type: 'err', text: err?.message || t.errorGeneric });
-    } finally {
-      setGeminiBusy(false);
     }
   }
 
@@ -466,25 +403,25 @@ export default function SettingsView({
 
               <dl className="p-5 space-y-2.5 text-xs">
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
-                  <dt className="text-slate-500 dark:text-slate-400">{t.usernameLabel}</dt>
+                  <dt className="text-slate-600 dark:text-slate-300">{t.usernameLabel}</dt>
                   <dd className="font-semibold text-[#0F2137] dark:text-white" dir="ltr">
                     @{user.username}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
-                  <dt className="text-slate-500 dark:text-slate-400">{t.jobTitleLabel}</dt>
+                  <dt className="text-slate-600 dark:text-slate-300">{t.jobTitleLabel}</dt>
                   <dd className="font-semibold text-[#0F2137] dark:text-white">
                     {user.job_title || roleDisplayLabel(user.role, t)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
-                  <dt className="text-slate-500 dark:text-slate-400">{t.departmentLabel}</dt>
+                  <dt className="text-slate-600 dark:text-slate-300">{t.departmentLabel}</dt>
                   <dd className="font-semibold text-[#0F2137] dark:text-white">
                     {user.department || '—'}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5">
-                  <dt className="text-slate-500 dark:text-slate-400">{t.accountStatusLabel}</dt>
+                  <dt className="text-slate-600 dark:text-slate-300">{t.accountStatusLabel}</dt>
                   <dd className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     <span>{t.statusActive}</span>
@@ -588,7 +525,7 @@ export default function SettingsView({
               </span>
               <div>
                 <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.changePasswordTitle}</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.passwordPolicyHint}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{t.passwordPolicyHint}</p>
               </div>
             </div>
 
@@ -698,7 +635,7 @@ export default function SettingsView({
               <form onSubmit={handleCreateUser} className="card p-5 xl:col-span-5 space-y-3.5 h-fit">
                 <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
                   <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.createUserTitle}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.tempPasswordHint}</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{t.tempPasswordHint}</p>
                 </div>
 
                 <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
@@ -783,6 +720,9 @@ export default function SettingsView({
                   </label>
                 </div>
 
+                <label className="block text-xs font-semibold">{locale === 'ar' ? 'مفتاح Gemini خاص بالموظف (اختياري)' : 'Personal Gemini key (optional)'}
+                  <PasswordInput wrapperClassName="mt-1" value={uGeminiKey} onChange={(e) => setUGeminiKey(e.target.value)} autoComplete="off" dir="ltr" showLabel={t.showPassword} hideLabel={t.hidePassword} />
+                </label>
                 {/* Admin-controlled Print Permission Toggle */}
                 <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-[#132942]/50 px-3.5 py-2.5 cursor-pointer">
                   <div className="min-w-0">
@@ -790,7 +730,7 @@ export default function SettingsView({
                       <AppIcon name="printer" size={14} className="text-[#0E7490] dark:text-[#22D3EE] shrink-0" />
                       <span>{t.printPermissionLabel}</span>
                     </span>
-                    <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <span className="block text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                       {uRole === 'admin'
                         ? t.printAdminAlways
                         : uCanPrint
@@ -845,7 +785,7 @@ export default function SettingsView({
                 </div>
                 <table className="w-full text-xs text-start">
                   <thead>
-                    <tr className="text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <tr className="text-slate-600 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
                       <th className="pb-2.5 font-semibold text-start">{t.fullNameLabel}</th>
                       <th className="pb-2.5 font-semibold text-start">{t.jobTitleLabel}</th>
                       <th className="pb-2.5 font-semibold text-start">{t.printPermissionLabel}</th>
@@ -868,7 +808,7 @@ export default function SettingsView({
                                 <div className="font-semibold text-[#0F2137] dark:text-white truncate">
                                   {u.full_name || u.username}
                                 </div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
+                                <div className="text-[11px] text-slate-600 dark:text-slate-300" dir="ltr">
                                   @{u.username}
                                 </div>
                               </div>
@@ -898,7 +838,7 @@ export default function SettingsView({
                                 className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                                   rowCanPrint
                                     ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#132942]/60 text-slate-500 dark:text-slate-400 hover:border-[#0891B2]'
+                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#132942]/60 text-slate-600 dark:text-slate-300 hover:border-[#0891B2]'
                                 }`}
                               >
                                 <span
@@ -963,7 +903,7 @@ export default function SettingsView({
                   <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                     {editingGroupId ? t.editGroupTitle : t.createGroupTitle}
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                     {t.linkingDesc}
                   </p>
                 </div>
@@ -1021,7 +961,7 @@ export default function SettingsView({
                               <span className="block text-xs font-semibold text-[#0F2137] dark:text-white truncate">
                                 {u.full_name || u.username}
                               </span>
-                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              <span className="block text-[11px] text-slate-600 dark:text-slate-300 truncate">
                                 {u.job_title || roleDisplayLabel(u.role, t)}
                                 {u.department ? ` · ${u.department}` : ''}
                               </span>
@@ -1034,7 +974,7 @@ export default function SettingsView({
                       );
                     })}
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.selectMinTwoHint}</p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300">{t.selectMinTwoHint}</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1061,7 +1001,7 @@ export default function SettingsView({
                 </div>
 
                 {linkGroups.length === 0 ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 py-8 text-center">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 py-8 text-center">
                     {t.noLinkGroups}
                   </p>
                 ) : (
@@ -1073,7 +1013,7 @@ export default function SettingsView({
                             <h4 className="text-sm font-bold text-[#0F2137] dark:text-white">
                               {group.name}
                             </h4>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
                               <span dir="ltr" className="tabular-nums">{group.members.length}</span> {t.adminUsers}
                               {group.created_at ? (
                                 <>
@@ -1126,143 +1066,32 @@ export default function SettingsView({
           )}
 
           {/* 3. ADMIN-ONLY GEMINI API KEY MANAGEMENT */}
-          {adminSub === 'gemini' && (
-            <form onSubmit={handleSaveGemini} className="card p-6 max-w-2xl space-y-5">
-              <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.geminiTitle}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    {t.geminiDesc}
-                  </p>
-                </div>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 ${
-                    geminiSettings?.effective_configured
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      geminiSettings?.effective_configured ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                  />
-                  <span>
-                    {geminiSettings?.has_db_key && geminiSettings.is_enabled
-                      ? t.geminiActiveDb
-                      : geminiSettings?.env_fallback_configured
-                      ? t.geminiActiveFallback
-                      : t.geminiInactive}
-                  </span>
-                </span>
-              </div>
-
-              {geminiSettings?.has_db_key && (
-                <div className="rounded-xl bg-slate-50 dark:bg-[#132942] border border-slate-200/80 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <span className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                      {t.geminiSavedKey}
-                    </span>
-                    <b dir="ltr" className="block mt-1 font-mono text-sm text-[#0F2137] dark:text-white">
-                      {geminiSettings.masked_key || '••••••••'}
-                    </b>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={geminiBusy}
-                    onClick={handleClearGeminiKey}
-                    className="btn btn-muted text-xs text-rose-600 dark:text-rose-400 py-1.5"
-                  >
-                    {t.geminiRemoveKey}
-                  </button>
-                </div>
-              )}
-
-              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
-                {geminiSettings?.has_db_key ? t.geminiKeyUpdateLabel : t.geminiKeyLabel}
-                <PasswordInput
-                  wrapperClassName="mt-1.5"
-                  dir="ltr"
-                  className="text-left font-mono"
-                  placeholder="AIzaSy..."
-                  value={geminiKeyInput}
-                  onChange={(e) => setGeminiKeyInput(e.target.value)}
-                  showLabel={t.showPassword}
-                  hideLabel={t.hidePassword}
-                  autoComplete="off"
-                />
-              </label>
-
-              <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4 cursor-pointer">
-                <div>
-                  <b className="block text-xs font-semibold text-[#0F2137] dark:text-white">
-                    {t.geminiEnableLabel}
-                  </b>
-                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    {t.geminiEnableHint}
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={geminiEnabled}
-                  onChange={(e) => setGeminiEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-[#0E7490] cursor-pointer shrink-0"
-                />
-              </label>
-
-              {geminiMsg && (
-                <p
-                  role="alert"
-                  className={`rounded-xl border px-4 py-2.5 text-xs font-medium ${
-                    geminiMsg.type === 'ok'
-                      ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                      : 'border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
-                  }`}
-                >
-                  {geminiMsg.text}
-                </p>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2.5">
-                <button type="submit" disabled={geminiBusy} className="btn btn-primary text-xs px-5">
-                  {geminiBusy ? t.saving : t.saveSettings}
-                </button>
-                <button
-                  type="button"
-                  disabled={geminiTesting || geminiBusy}
-                  onClick={handleTestGemini}
-                  className="btn btn-muted text-xs px-4"
-                >
-                  {geminiTesting ? t.testing : t.testConnection}
-                </button>
-              </div>
-            </form>
-          )}
+          {adminSub === 'gemini' && <GeminiKeyPanel token={token} locale={locale} />}
 
           {/* 4. STORAGE & BACKUP */}
           {adminSub === 'storage' && (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="card p-4 border-s-[3px] border-s-[#0E7490]">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.storedDocs}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.storedDocs}</span>
                   <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {storageMetrics?.saved_files ?? systemSummary?.total_documents ?? 0}
                   </b>
                 </div>
                 <div className="card p-4 border-s-[3px] border-s-[#0891B2]">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.storedSize}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.storedSize}</span>
                   <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {formatBytes(storageMetrics?.stored_file_bytes ?? systemSummary?.stored_file_bytes)}
                   </b>
                 </div>
                 <div className="card p-4 border-s-[3px] border-s-emerald-500">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.freeSpace}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.freeSpace}</span>
                   <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {diskFree ? formatBytes(diskFree) : '—'}
                   </b>
                 </div>
                 <div className="card p-4 border-s-[3px] border-s-amber-500">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.storageType}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.storageType}</span>
                   <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white">
                     {(storageMetrics?.provider || systemSummary?.provider || provider) === 's3'
                       ? t.storageCloud
@@ -1373,7 +1202,7 @@ export default function SettingsView({
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <b className="text-sm text-[#0F2137] dark:text-white block">{t.backupTitle}</b>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{t.backupDesc}</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-300">{t.backupDesc}</span>
                       </div>
                       <button
                         type="button"
@@ -1443,7 +1272,7 @@ export default function SettingsView({
                         <b className="text-xs font-semibold text-[#0F2137] dark:text-white block truncate">
                           {f.name}
                         </b>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-300">
                           {f.owner_name ? `${f.owner_name} · ` : ''}
                           <span dir="ltr" className="tabular-nums">{f.item_count ?? 0}</span> {t.itemsCount} ·{' '}
                           <span dir="ltr" className="tabular-nums">{formatDateISO(f.updated_at)}</span>
@@ -1600,7 +1429,7 @@ export default function SettingsView({
             <section className="card p-5 max-w-2xl space-y-4">
               <div>
                 <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.reindexTitle}</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.reindexDesc}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{t.reindexDesc}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-brand-50/70 dark:bg-[#132942] border border-brand-200/70 dark:border-[#0891B2]/25 p-3.5">
@@ -1610,7 +1439,7 @@ export default function SettingsView({
                   </b>
                 </div>
                 <div className="rounded-xl bg-slate-50 dark:bg-[#132942]/60 border border-slate-200/80 dark:border-slate-700 p-3.5">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.pendingDocsLabel}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.pendingDocsLabel}</span>
                   <b className="block mt-1 text-xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {systemSummary?.pending_documents ?? 0}
                   </b>
@@ -1662,48 +1491,7 @@ export default function SettingsView({
           )}
 
           {/* 7. AUDIT LOG */}
-          {adminSub === 'audit' && (
-            <section className="card overflow-hidden">
-              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.auditTitle}</h3>
-                <span dir="ltr" className="text-xs font-semibold text-slate-500 tabular-nums">
-                  {audit.length}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-start">
-                  <thead>
-                    <tr className="bg-slate-50 dark:bg-[#0B192B]/50 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                      <th className="p-3.5 font-semibold text-start">{t.auditAction}</th>
-                      <th className="p-3.5 font-semibold text-start">{t.auditResource}</th>
-                      <th className="p-3.5 font-semibold text-start">{t.auditTime}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {audit.map((a) => (
-                      <tr key={a.id} className="hover:bg-slate-50/75 dark:hover:bg-[#132942]/40">
-                        <td className="p-3.5">
-                          <span
-                            dir="ltr"
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE]"
-                          >
-                            {a.action}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-slate-600 dark:text-slate-400">{a.resource_type}</td>
-                        <td className="p-3.5 text-slate-500 dark:text-slate-400 tabular-nums" dir="ltr">
-                          {formatDateTimeISO(a.created_at)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {audit.length === 0 && (
-                  <p className="text-center p-8 text-xs text-slate-400">{t.noAuditEvents}</p>
-                )}
-              </div>
-            </section>
-          )}
+          {adminSub === 'audit' && <AuditPanel token={token} locale={locale} />}
         </div>
       )}
 
@@ -1797,7 +1585,7 @@ export default function SettingsView({
                   <AppIcon name="printer" size={14} className="text-[#0E7490] dark:text-[#22D3EE] shrink-0" />
                   <span>{t.printPermissionLabel}</span>
                 </span>
-                <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <span className="block text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                   {editRole === 'admin'
                     ? t.printAdminAlways
                     : editCanPrint
@@ -1826,6 +1614,10 @@ export default function SettingsView({
               />
             </label>
 
+            <label className="block text-xs font-semibold">{locale === 'ar' ? 'استبدال مفتاح Gemini الخاص (اتركه فارغاً للإبقاء عليه)' : 'Replace personal Gemini key (leave blank to keep)'}
+              <PasswordInput wrapperClassName="mt-1" value={editGeminiKey} disabled={clearPersonalKey} onChange={(e) => setEditGeminiKey(e.target.value)} autoComplete="off" dir="ltr" showLabel={t.showPassword} hideLabel={t.hidePassword} />
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={clearPersonalKey} onChange={(e) => setClearPersonalKey(e.target.checked)} />{locale === 'ar' ? 'حذف المفتاح الخاص والاعتماد على مفاتيح النظام' : 'Remove personal key and use system keys'}</label>
             <div className="pt-2 flex justify-end gap-2">
               <button type="button" onClick={() => setEditingUser(null)} className="btn btn-muted text-xs">
                 {t.cancel}

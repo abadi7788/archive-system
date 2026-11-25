@@ -162,7 +162,7 @@ def format_document_path(folder_id: uuid.UUID | None, file_name: str, breadcrumb
     return "", file_name
 
 
-async def run_ocr_background(
+async def _run_ocr_background(
     document_id: uuid.UUID,
     storage_key: str,
     mime_type: str,
@@ -204,6 +204,23 @@ async def run_ocr_background(
             doc.processing_status = "failed"
             doc.processing_error = "Background text extraction failed"
         await session.commit()
+
+
+async def run_ocr_background(document_id: uuid.UUID, storage_key: str, mime_type: str, user_key_encrypted: str | None = None) -> None:
+    from sqlalchemy import text
+    # Transaction-scoped advisory lock survives helper commits and is released on
+    # cancellation/process loss by PostgreSQL. Other workers skip an in-flight job.
+    async with SessionLocal() as lock_db:
+        async with lock_db.begin():
+            acquired = await lock_db.scalar(text("SELECT pg_try_advisory_xact_lock(hashtextextended(:id, 0))"), {"id": str(document_id)})
+            if not acquired:
+                return
+            doc = await lock_db.get(Document, document_id)
+            if not doc or doc.deleted_at is not None or doc.processing_status == 'completed':
+                return
+            # Resolve the current personal key instead of a stale queued copy.
+            owner = await lock_db.get(User, doc.user_id)
+            await _run_ocr_background(document_id, storage_key, mime_type, owner.gemini_key_encrypted if owner else None)
 
 
 async def run_ocr_batch_background(document_jobs: list[tuple[uuid.UUID, str, str, str | None]]) -> None:
@@ -807,10 +824,10 @@ async def retrieve_document(
     db.add(
         AuditLog(
             actor_id=user.id,
-            action="document.downloaded",
+            action="document.previewed" if inline else "document.downloaded",
             resource_type="document",
             resource_id=str(doc.id),
-            detail={"inline": inline},
+            detail={"inline": inline, "file_name": doc.file_name},
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )

@@ -81,11 +81,8 @@ export default function DocumentInspector({
   t,
   dir,
   onOpenFullPreview,
-  onPrintDoc,
   onToggleStar,
-  onDownload,
   onEdit,
-  onRequestDelete,
   onCloseMobile,
 }: {
   doc: DocItem | null;
@@ -96,11 +93,8 @@ export default function DocumentInspector({
   t: TranslationKeys;
   dir: 'rtl' | 'ltr';
   onOpenFullPreview: (doc: DocItem) => void;
-  onPrintDoc: (doc: DocItem) => void;
   onToggleStar: (doc: DocItem) => void;
-  onDownload: (doc: DocItem) => void;
   onEdit: (doc: DocItem) => void;
-  onRequestDelete: (doc: DocItem) => void;
   onCloseMobile?: () => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string>('');
@@ -175,7 +169,7 @@ export default function DocumentInspector({
         <h3 className="text-sm font-bold text-[#0F2137] dark:text-slate-100">
           {t.inspectorEmptyTitle}
         </h3>
-        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 max-w-[235px] leading-relaxed">
+        <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 max-w-[235px] leading-relaxed">
           {t.inspectorEmptyDesc}
         </p>
       </div>
@@ -216,23 +210,12 @@ export default function DocumentInspector({
           >
             <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={15} />
           </button>
-          {canPrint && (
-            <button
-              type="button"
-              onClick={() => onPrintDoc(doc)}
-              title={t.print}
-              aria-label={t.print}
-              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-brand-50 dark:hover:bg-white/10 hover:text-[#0E7490] dark:hover:text-[#22D3EE] transition-colors"
-            >
-              <AppIcon name="printer" size={15} />
-            </button>
-          )}
           <button
             type="button"
             onClick={() => onOpenFullPreview(doc)}
             title={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
             aria-label={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
-            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-brand-50 dark:hover:bg-white/10 hover:text-[#0E7490] dark:hover:text-[#22D3EE] transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-brand-50 dark:hover:bg-white/10 hover:text-[#0E7490] dark:hover:text-[#22D3EE] transition-colors"
           >
             <AppIcon name="maximize" size={15} />
           </button>
@@ -241,7 +224,7 @@ export default function DocumentInspector({
               type="button"
               onClick={onCloseMobile}
               aria-label={t.close}
-              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
             >
               <AppIcon name="x" size={16} />
             </button>
@@ -289,7 +272,7 @@ export default function DocumentInspector({
               <div className="w-11 h-11 rounded-xl bg-white dark:bg-[#132942] border border-slate-200 dark:border-slate-700 text-[#0E7490] dark:text-[#22D3EE] grid place-items-center mb-2 shadow-sm">
                 <AppIcon name={isImage ? 'image' : 'file'} size={22} />
               </div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
                 {previewFailed
                   ? t.previewUnavailable
                   : canPrint
@@ -322,7 +305,7 @@ export default function DocumentInspector({
             {doc.keywords.slice(0, 6).map((kw, idx) => (
               <span
                 key={`${kw}-${idx}`}
-                className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] border border-brand-200/70 dark:border-[#0891B2]/25"
+                className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] border border-brand-200/70 dark:border-[#0891B2]/25"
               >
                 {kw}
               </span>
@@ -359,43 +342,43 @@ export default function DocumentInspector({
       {/* Structured Metadata Rows */}
       <div className="px-4 py-2 border-t border-slate-200/85 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 text-xs">
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.uploadedByLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.uploadedByLabel}</span>
           <span className="font-semibold text-[#0F2137] dark:text-slate-200 truncate text-end">
             {ownerDisplay}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.departmentLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.departmentLabel}</span>
           <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate text-end">
             {doc.department || '—'}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.classificationLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.classificationLabel}</span>
           <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate text-end">
             {doc.classification || '—'}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.folderPathLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.folderPathLabel}</span>
           <span className="font-medium text-slate-700 dark:text-slate-300 truncate text-end" dir="auto">
             {doc.folder_breadcrumb || t.rootHome}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.dateLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.dateLabel}</span>
           <span dir="ltr" className="font-medium text-[#0F2137] dark:text-slate-200 tabular-nums">
             {formatDateISO(doc.created_at)}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.sizeLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.sizeLabel}</span>
           <span dir="ltr" className="font-medium text-[#0F2137] dark:text-slate-200 tabular-nums">
             {formatBytes(doc.file_size)}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.statusLabel}</span>
+          <span className="text-slate-600 dark:text-slate-300 shrink-0">{t.statusLabel}</span>
           <span className={`inline-flex items-center gap-1.5 font-semibold ${statusMeta.textClass}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
             <span>{statusMeta.label}</span>
@@ -403,62 +386,11 @@ export default function DocumentInspector({
         </div>
       </div>
 
-      {/* Quick Direct Actions */}
-      <div className="p-4 pt-3 border-t border-slate-200/85 dark:border-slate-800 bg-slate-50/75 dark:bg-[#0B192B]/60 space-y-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onOpenFullPreview(doc)}
-            className="btn btn-primary flex-1 py-2.5 text-xs"
-          >
-            <AppIcon name="eye" size={15} />
-            <span className="truncate">{t.openFullPreview}</span>
-          </button>
-          {canPrint && (
-            <button
-              type="button"
-              onClick={() => onPrintDoc(doc)}
-              title={t.print}
-              aria-label={t.print}
-              className="btn btn-muted py-2.5 px-3 text-xs shrink-0"
-            >
-              <AppIcon name="printer" size={15} />
-            </button>
-          )}
-        </div>
-
-        <div className={`grid gap-2 ${canManage ? 'grid-cols-3' : 'grid-cols-1'}`}>
-          <button
-            type="button"
-            onClick={() => onDownload(doc)}
-            className="btn btn-muted py-2 px-2.5 text-xs"
-          >
-            <AppIcon name="download" size={14} />
-            <span className="truncate">{t.download}</span>
-          </button>
-
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => onEdit(doc)}
-              className="btn btn-muted py-2 px-2.5 text-xs"
-            >
-              <AppIcon name="edit" size={14} />
-              <span className="truncate">{t.edit}</span>
-            </button>
-          )}
-
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => onRequestDelete(doc)}
-              className="btn py-2 px-2.5 text-xs border border-rose-200 dark:border-rose-900/70 bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/70"
-            >
-              <AppIcon name="trash" size={14} />
-              <span className="truncate">{t.deleteAction}</span>
-            </button>
-          )}
-        </div>
+      <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+        <button type="button" onClick={() => onOpenFullPreview(doc)} className="btn btn-primary w-full text-xs">
+          <AppIcon name="eye" size={16} />{t.openFullPreview}
+        </button>
+        {canManage && <button type="button" onClick={() => onEdit(doc)} className="btn btn-muted w-full text-xs mt-2"><AppIcon name="edit" size={15} />{t.edit}</button>}
       </div>
     </div>
   );
