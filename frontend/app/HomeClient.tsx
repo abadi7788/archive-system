@@ -6,6 +6,7 @@ import ArchiveView, { DRAG_DOC_IDS_MIME } from './components/ArchiveView';
 import EditDocumentModal from './components/EditDocumentModal';
 import FirstLoginPasswordModal from './components/FirstLoginPasswordModal';
 import LanguageSelectionModal from './components/LanguageSelectionModal';
+import LoginShowcase from './components/LoginShowcase';
 import PasswordInput from './components/PasswordInput';
 import PWAInstallButton from './components/PWAInstallButton';
 import SettingsView from './components/SettingsView';
@@ -1530,28 +1531,18 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     return (
       <div
         dir={dir}
-        className="min-h-[100svh] auth-canvas flex flex-col items-center justify-center p-4 sm:p-6 transition-colors"
+        className="login-screen min-h-[100svh] transition-colors"
       >
-        <main className="login-portal w-full max-w-6xl grid lg:grid-cols-[1.08fr_1fr]">
+        <main className="login-portal w-full grid lg:grid-cols-[1.08fr_1fr]">
           <section className="login-identity vault-showcase relative text-white flex flex-col overflow-hidden">
             <div className="relative z-10 flex items-center gap-3">
               <BrandMark size={50} />
               <h2 dir="ltr" className="text-xl sm:text-2xl font-bold tracking-tight">Archive YemanY</h2>
             </div>
-            <div aria-hidden="true" className="vault-art hidden lg:flex flex-1 items-center justify-center">
-              <div className="vault-orbit vault-orbit-outer" />
-              <div className="vault-orbit vault-orbit-inner" />
-              <div className="vault-document vault-document-back"><span /><span /><span /></div>
-              <div className="vault-document vault-document-front"><span /><span /><span /><span /></div>
-              <div className="vault-emblem"><BrandMark size={160} /></div>
-              <div className="vault-seal"><AppIcon name="key" size={23} /></div>
-            </div>
-            <div aria-hidden="true" className="hidden lg:flex relative z-10 items-center gap-2 text-cyan-200/60">
-              <span className="h-px flex-1 bg-white/15" /><span className="w-1.5 h-1.5 rotate-45 bg-cyan-200/60" /><span className="h-px w-12 bg-white/15" />
-            </div>
+            <LoginShowcase t={t} />
           </section>
           <div className="login-form-panel bg-white dark:bg-[#0F2137]">
-            <div className="flex justify-end gap-2 mb-8 sm:mb-12">
+            <div className="login-preferences flex justify-end gap-2">
               <button type="button" onClick={() => setPreLoginLangOpen(true)} className="btn btn-secondary text-xs gap-2" aria-label={t.languageLabel}>
                 <AppIcon name="globe" size={15} />
                 {LANGUAGES.find((language) => language.code === locale)?.nativeName}
@@ -1561,8 +1552,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
               </button>
             </div>
+            <div className="login-credentials">
             <div className="login-form-heading mb-8">
-              <span aria-hidden="true" className="login-heading-rule" />
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                 {t.signInTitle}
               </h1>
@@ -1629,8 +1620,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 <AppIcon name="chevronLeft" size={18} className={dir === 'ltr' ? 'rotate-180' : ''} />
               </button>
             </form>
-            <div className="mt-7 pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <div className="login-install">
               <PWAInstallButton label={t.installApp} closeLabel={t.close} dir={dir} />
+            </div>
             </div>
           </div>
         </main>

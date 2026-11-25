@@ -53,11 +53,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 10
     if (viewport.width < 640) expect(await list.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
     await page.keyboard.press('Control+k');
     await expect(search).toBeFocused();
-    if (viewport.width >= 768) {
-      const key = await page.locator('kbd').boundingBox();
-      const input = await search.boundingBox();
-      expect(key!.x + key!.width).toBeLessThanOrEqual(input!.x);
-    }
+    await expect(page.locator('kbd')).toHaveCount(0);
     // No print/delete/download controls outside the full document preview.
     await expect(page.getByRole('button', { name: 'طباعة', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'تحميل', exact: true })).toHaveCount(0);
@@ -123,7 +119,7 @@ test('PDF grid uses a rendered first page; office files have meaningful icons', 
   await expect(page.getByText('EXCEL', { exact: true })).toBeVisible();
 });
 
-test('English dark workspace preserves layout and shortcut spacing', async ({ page }) => {
+test('English dark workspace preserves layout and hidden shortcut', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockApi(page);
   const englishUser = { ...user, preferred_language: 'en', preferred_theme: 'dark' };
@@ -136,9 +132,9 @@ test('English dark workspace preserves layout and shortcut spacing', async ({ pa
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.locator('tbody tr')).toHaveCount(40);
-  const input = await page.locator('input[type="search"]').boundingBox();
-  const key = await page.locator('kbd').boundingBox();
-  expect(input!.x + input!.width).toBeLessThanOrEqual(key!.x);
+  await expect(page.locator('kbd')).toHaveCount(0);
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('input[type="search"]')).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -254,6 +250,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 320, height: 640 
     await expect(page.getByRole('button', { name: 'تسجيل الدخول', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(await page.locator('img[src="/brand/archive-mark.svg"]').first().evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    const portal = await page.locator('.login-portal').boundingBox();
+    expect(portal!.x).toBe(0);
+    expect(portal!.y).toBe(0);
+    expect(portal!.width).toBe(viewport.width);
+    expect(portal!.height).toBeGreaterThanOrEqual(viewport.height);
+    await expect(page.locator('.login-heading-rule, .vault-art, .vault-seal')).toHaveCount(0);
   });
 }
 
@@ -298,4 +300,67 @@ test('storage restrictions do not crash login or lose an in-memory choice', asyn
   await expect(page.locator('html')).toHaveClass(/dark/);
   expect(api.updates[0]).toEqual({ preferred_language: 'en', preferred_theme: 'dark' });
   expect(errors).toEqual([]);
+});
+
+for (const language of ['ar', 'en']) {
+  test(`fullscreen login illustration is interactive and keyboard accessible (${language})`, async ({ page }) => {
+    await page.setViewportSize({ width: 1536, height: 864 });
+    await mockApi(page);
+    const errors: string[] = [];
+    const authRequests: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('request', (request) => { if (request.url().includes('/auth/')) authRequests.push(request.url()); });
+    await page.addInitScript((lang) => localStorage.setItem('archive-pref-lang', lang), language);
+    await page.goto('/');
+    await expect(page.locator('#login-username')).toBeVisible();
+    const group = page.locator('.showcase-mode-group');
+    await expect(group.getByRole('button')).toHaveCount(3);
+    const modes = ['organize', 'find', 'protect'];
+    for (let index = 0; index < modes.length; index += 1) {
+      const mode = modes[index];
+      const button = group.getByRole('button').nth(index);
+      await button.focus();
+      await page.keyboard.press('Enter');
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+      await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1);
+      await expect(page.locator('.showcase-scene')).toHaveAttribute('data-mode', mode);
+      await expect(page.locator('#login-demo-description')).not.toBeEmpty();
+    }
+    // The illustration is not connected to account or document services.
+    expect(authRequests).toEqual([]);
+    expect(errors).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(864);
+    expect(await page.locator('.login-portal').evaluate((element) => getComputedStyle(element).borderRadius)).toBe('0px');
+    await page.getByRole('button', { name: language === 'ar' ? 'المظهر' : 'Theme', exact: true }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    await expect(group.getByRole('button').last()).toHaveAttribute('aria-pressed', 'true');
+  });
+}
+
+test('reduced motion disables decorative pointer tilt without disabling interaction', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mockApi(page);
+  await page.addInitScript(() => localStorage.setItem('archive-pref-lang', 'en'));
+  await page.goto('/');
+  const stage = page.locator('.showcase-stage');
+  await expect(stage).toBeVisible();
+  const bounds = await stage.boundingBox();
+  await page.mouse.move(bounds!.x + 10, bounds!.y + 10);
+  expect(await stage.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
+  await page.getByRole('button', { name: 'Protect', exact: true }).click();
+  await expect(page.locator('.showcase-scene')).toHaveAttribute('data-mode', 'protect');
+  expect(await stage.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
+});
+
+test('compact desktop login fills the viewport without clipping its controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await mockApi(page);
+  await page.addInitScript(() => localStorage.setItem('archive-pref-lang', 'en'));
+  await page.goto('/');
+  await expect(page.locator('#login-username')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Protect', exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(600);
 });
