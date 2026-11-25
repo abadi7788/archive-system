@@ -320,28 +320,9 @@ export default function BrandMark({
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 48 48" width={size * 0.6} height={size * 0.6} fill="none">
-        <path
-          d="M11.5 10.5A3.5 3.5 0 0 1 15 7h13.2L36 14.5v22A3.5 3.5 0 0 1 32.5 40H15a3.5 3.5 0 0 1-3.5-3.5v-26Z"
-          fill="white"
-          fillOpacity=".98"
-        />
-        <path
-          d="M28.2 7v8h7.4M17.5 22h12.5M17.5 27.5h12.5M17.5 33h7"
-          stroke="#0E7490"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="33.5" cy="34.5" r="7" fill="#0891B2" stroke="white" strokeWidth="1.8" />
-        <path
-          d="m30.3 34.6 2.1 2.1 4.4-4.6"
-          stroke="white"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      {/* A single vector source is shared with browser and installed-app icons. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/archive-mark.svg" width={size} height={size} alt="" draggable={false} />
     </span>
   );
 }

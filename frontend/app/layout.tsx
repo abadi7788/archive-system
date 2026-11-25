@@ -41,6 +41,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var l=localStorage.getItem('archive-pref-lang');var t=localStorage.getItem('archive-pref-theme');if(l&&['ar','en','fr','es','de','tr','ur','hi','zh','ja','ru'].includes(l)){document.documentElement.lang=l;document.documentElement.dir=['ar','ur'].includes(l)?'rtl':'ltr';}document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}})();` }} />
+      </head>
       <body className="font-sans antialiased bg-[#F1F5F9] text-[#0F2137] dark:bg-[#0A1626] dark:text-slate-100">
         <PwaRegister />
         {children}

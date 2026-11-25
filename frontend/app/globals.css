@@ -396,3 +396,58 @@ input, select, textarea, button { font: inherit; }
   .archive-workspace table td:nth-last-child(2) { display: none; }
   .archive-workspace table td, .archive-workspace table th { padding-inline: .4rem; }
 }
+
+/* Unified archive identity: same navy / petrol palette, architectural proportions. */
+.brand-mark { background: none; box-shadow: none; border-radius: 22%; overflow: hidden; flex-shrink: 0; }
+.brand-mark img { display: block; width: 100%; height: 100%; }
+.login-portal { border: 1px solid var(--border-subtle); border-radius: 28px; overflow: hidden; box-shadow: 0 32px 90px -32px rgba(15,33,55,.32), 0 4px 16px -8px rgba(15,33,55,.15); }
+.login-identity { padding: 36px; min-height: 610px; }
+.login-identity::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(135deg, transparent 49.8%, rgba(103,232,249,.04) 50%, transparent 50.2%); background-size: 90px 90px; }
+.login-form-panel { padding: 32px 48px 36px; }
+.login-heading-rule { display: block; width: 32px; height: 4px; border-radius: 9px; background: #0891B2; margin-bottom: 20px; }
+.login-form .field { min-height: 52px; border-radius: 12px; background-color: var(--surface-subtle); }
+.login-form .btn-primary { min-height: 52px; border-radius: 12px; margin-top: 12px; }
+.vault-art { position: relative; min-height: 400px; isolation: isolate; }
+.vault-orbit { position: absolute; border: 1px solid rgba(103,232,249,.13); border-radius: 50%; }
+.vault-orbit-outer { width: 360px; height: 360px; }
+.vault-orbit-inner { width: 274px; height: 274px; border-style: dashed; transform: rotate(20deg); }
+.vault-emblem { z-index: 2; transform: rotate(-7deg); border-radius: 36px; box-shadow: 0 30px 50px -20px #0009; }
+.vault-document { position: absolute; width: 140px; height: 178px; border: 1px solid #67E8F93B; border-radius: 16px; background: linear-gradient(145deg, #23445B, #152C45); box-shadow: 0 20px 40px #0002; padding: 24px; }
+.vault-document span { display: block; height: 5px; margin: 13px 0; border-radius: 9px; background: #A5F3FC38; }
+.vault-document span:last-child { width: 60%; }
+.vault-document-back { transform: translate(66px,-54px) rotate(15deg); }
+.vault-document-front { transform: translate(-76px,42px) rotate(-19deg); }
+.vault-seal { position: absolute; transform: translate(113px,111px); width: 56px; height: 56px; border-radius: 17px; background: #155E75; border: 1px solid #67E8F959; display: grid; place-items: center; color: #CFFAFE; box-shadow: 0 10px 30px #0003; z-index: 3; }
+.workspace-sidebar { overflow: hidden; }
+.workspace-sidebar nav button { min-height: 40px; border-radius: 10px; }
+.workspace-sidebar nav button[aria-current="page"] { box-shadow: inset 0 0 0 1px #67E8F92A; }
+.workspace-header { margin-inline: 0; }
+.archive-summary { border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-card); overflow: hidden; gap: 0 !important; box-shadow: var(--shadow-card); }
+.archive-summary > .card { box-shadow: none; border: 0; border-inline-end: 1px solid var(--border-subtle); border-radius: 0; background: transparent; padding-block: 18px; }
+.archive-summary > .card:last-child { border-inline-end: 0; }
+.archive-search { box-shadow: none; }
+.file-list-scroll tbody tr { transition: background-color 120ms ease; }
+.file-list-scroll thead th { padding-block: 14px; font-size: 12px; }
+@media (min-width: 1024px) {
+  .workspace-shell { padding: 12px; gap: 8px; }
+  .desktop-sidebar { height: 100%; }
+  .workspace-sidebar { border-radius: 18px; border: 1px solid #ffffff0F; box-shadow: 0 12px 28px -16px #0F213766; }
+  .workspace-header { border: 1px solid var(--border-subtle); border-radius: 16px; margin-inline: 12px; }
+}
+@media (max-width: 1023px) {
+  .login-portal { max-width: 480px; border-radius: 22px; }
+  .login-identity { min-height: auto; padding: 24px 28px; }
+  .login-form-panel { padding: 24px 28px 28px; }
+}
+@media (max-width: 639px) {
+  .archive-summary > .card { padding: .65rem; }
+  .archive-summary > .card:nth-child(2) { border-inline-end: 0; }
+  .archive-summary > .card:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
+  .workspace-header { gap: 8px; padding-inline: 12px; min-height: 64px; }
+  .workspace-header > div { gap: 6px; }
+  .workspace-header .btn { padding: 8px; }
+}
+@media (max-width: 359px) {
+  .login-identity, .login-form-panel { padding: 22px 20px; }
+  .login-identity h2 { font-size: 18px; }
+}
