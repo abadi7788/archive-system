@@ -30,8 +30,8 @@ export default function LanguageSelectionModal({
 
   const wrapperClass =
     variant === 'page'
-      ? 'min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0B1120] flex items-center justify-center p-4 sm:p-6 transition-colors'
-      : 'fixed inset-0 z-[95] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4';
+      ? 'min-h-[100svh] auth-canvas flex items-center justify-center p-4 sm:p-8 transition-colors'
+      : 'fixed inset-0 z-[95] bg-[#091524]/75 backdrop-blur-md flex items-center justify-center p-4';
 
   return (
     <div
@@ -41,58 +41,69 @@ export default function LanguageSelectionModal({
       dir={previewDir}
       className={wrapperClass}
     >
-      <div className="card w-full max-w-xl p-6 sm:p-8 shadow-sm">
-        <div className="flex items-center gap-3.5 pb-5 border-b border-slate-200/80 dark:border-slate-800">
-          <BrandMark size={44} />
+      <div className="card-elevated w-full max-w-2xl overflow-hidden">
+        {/* Deep Navy & Petrol Executive Header */}
+        <div className="vault-showcase px-6 sm:px-9 py-7 text-white flex items-center gap-4 border-b border-white/10">
+          <BrandMark size={48} />
           <div className="min-w-0">
-            <h1 id="lang-select-title" className="text-lg font-bold text-slate-900 dark:text-white">
+            <h1
+              id="lang-select-title"
+              className="text-lg sm:text-xl font-bold tracking-tight text-white"
+            >
               {previewT.chooseLanguageTitle}
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
               {previewT.chooseLanguageSubtitle}
             </p>
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          {LANGUAGES.map((lang) => {
-            const active = selected === lang.code;
-            return (
-              <button
-                key={lang.code}
-                type="button"
-                onClick={() => setSelected(lang.code)}
-                className={`flex items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-start transition-colors ${
-                  active
-                    ? 'border-blue-600 bg-blue-50/90 text-blue-700 dark:bg-blue-950/50 dark:border-blue-500 dark:text-blue-200'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div className="min-w-0">
-                  <span className="block text-sm font-semibold truncate">{lang.nativeName}</span>
-                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang.englishName}
+        {/* Language Grid */}
+        <div className="p-6 sm:p-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {LANGUAGES.map((lang) => {
+              const active = selected === lang.code;
+              return (
+                <button
+                  key={lang.code}
+                  type="button"
+                  onClick={() => setSelected(lang.code)}
+                  className={`group flex items-center justify-between gap-2.5 rounded-xl border px-4 py-3.5 text-start transition-all duration-150 ${
+                    active
+                      ? 'border-[#0E7490] bg-brand-50/85 text-[#0E7490] ring-1 ring-[#0E7490]/25 dark:bg-[#132942] dark:border-[#0891B2] dark:text-cyan-100'
+                      : 'border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0F2137] text-[#0F2137] dark:text-slate-200 hover:border-[#0891B2]/50 hover:bg-slate-50/80 dark:hover:bg-[#132942]/80'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <span className="block text-sm font-semibold truncate">{lang.nativeName}</span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      {lang.englishName}
+                    </span>
+                  </div>
+                  <span
+                    className={`w-5 h-5 rounded-full grid place-items-center shrink-0 transition-colors ${
+                      active
+                        ? 'bg-[#0E7490] text-white'
+                        : 'border border-slate-300 dark:border-slate-600 text-transparent group-hover:border-[#0891B2]'
+                    }`}
+                  >
+                    <AppIcon name="check" size={11} />
                   </span>
-                </div>
-                {active && (
-                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white grid place-items-center shrink-0">
-                    <AppIcon name="check" size={12} />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="mt-6 flex justify-end">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={handleConfirm}
-            className="btn btn-primary px-6 py-2.5 text-sm"
-          >
-            {saving ? previewT.saving : previewT.saveAndContinue}
-          </button>
+          <div className="mt-7 pt-5 border-t border-slate-200/80 dark:border-slate-800 flex justify-end">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleConfirm}
+              className="btn btn-primary px-7 py-2.5 text-sm"
+            >
+              {saving ? previewT.saving : previewT.saveAndContinue}
+            </button>
+          </div>
         </div>
       </div>
     </div>

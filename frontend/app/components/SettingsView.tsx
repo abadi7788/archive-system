@@ -137,7 +137,8 @@ export default function SettingsView({
   const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [pwBusy, setPwBusy] = useState(false);
 
-  // Admin Create User Form (flexible Full Name, Job Title, Print Permission)
+  // Admin Create User Form + Search
+  const [userTableSearch, setUserTableSearch] = useState('');
   const [uName, setUName] = useState('');
   const [uFullName, setUFullName] = useState('');
   const [uJobTitle, setUJobTitle] = useState('');
@@ -190,6 +191,18 @@ export default function SettingsView({
   const [taxBusy, setTaxBusy] = useState(false);
   const [reindexBusy, setReindexBusy] = useState(false);
   const [reindexMsg, setReindexMsg] = useState('');
+
+  const filteredTableUsers = useMemo(() => {
+    const q = userTableSearch.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(
+      (u) =>
+        u.username.toLowerCase().includes(q) ||
+        (u.full_name || '').toLowerCase().includes(q) ||
+        (u.job_title || '').toLowerCase().includes(q) ||
+        (u.department || '').toLowerCase().includes(q)
+    );
+  }, [users, userTableSearch]);
 
   const filteredLinkableUsers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -397,17 +410,18 @@ export default function SettingsView({
     <div className="max-w-7xl mx-auto space-y-5">
       {/* Main Settings Segmented Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700">
+        <div className="inline-flex items-center p-1 rounded-xl bg-white dark:bg-[#0F2137] border border-slate-200/85 dark:border-slate-800 shadow-sm">
           <button
             type="button"
             onClick={() => setTab('account')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
               tab === 'account'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#0E7490] text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F2137] dark:hover:text-white'
             }`}
           >
-            {t.tabAccount}
+            <AppIcon name="user" size={14} />
+            <span>{t.tabAccount}</span>
           </button>
           {isAdmin && (
             <button
@@ -416,13 +430,14 @@ export default function SettingsView({
                 setTab('admin');
                 onRefreshAdmin();
               }}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                 tab === 'admin'
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[#0E7490] text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-[#0F2137] dark:hover:text-white'
               }`}
             >
-              {t.tabAdmin}
+              <AppIcon name="shield" size={14} />
+              <span>{t.tabAdmin}</span>
             </button>
           )}
         </div>
@@ -434,44 +449,45 @@ export default function SettingsView({
           {/* Profile + Language & Theme Card */}
           <div className="lg:col-span-5 space-y-5">
             {/* Profile Details */}
-            <section className="card p-5 space-y-4">
-              <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800">
-                <div className="w-12 h-12 rounded-xl bg-blue-600 text-white font-bold text-lg grid place-items-center shrink-0">
+            <section className="card overflow-hidden">
+              <div className="vault-showcase p-5 flex items-center gap-3.5 text-white border-b border-white/10">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#0891B2] to-[#0E7490] border border-white/25 text-white font-bold text-lg grid place-items-center shrink-0 shadow-md">
                   {(user.full_name || user.username).slice(0, 1).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  <h3 className="text-sm font-bold text-white truncate">
                     {user.full_name || user.username}
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  <p className="text-xs text-cyan-200/90 truncate mt-0.5">
                     {user.job_title || roleDisplayLabel(user.role, t)}
                   </p>
                 </div>
               </div>
 
-              <dl className="space-y-2.5 text-xs">
+              <dl className="p-5 space-y-2.5 text-xs">
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
                   <dt className="text-slate-500 dark:text-slate-400">{t.usernameLabel}</dt>
-                  <dd className="font-semibold text-slate-900 dark:text-white" dir="ltr">
-                    {user.username}
+                  <dd className="font-semibold text-[#0F2137] dark:text-white" dir="ltr">
+                    @{user.username}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
                   <dt className="text-slate-500 dark:text-slate-400">{t.jobTitleLabel}</dt>
-                  <dd className="font-semibold text-slate-900 dark:text-white">
+                  <dd className="font-semibold text-[#0F2137] dark:text-white">
                     {user.job_title || roleDisplayLabel(user.role, t)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800/80">
                   <dt className="text-slate-500 dark:text-slate-400">{t.departmentLabel}</dt>
-                  <dd className="font-semibold text-slate-900 dark:text-white">
+                  <dd className="font-semibold text-[#0F2137] dark:text-white">
                     {user.department || '—'}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between py-1.5">
                   <dt className="text-slate-500 dark:text-slate-400">{t.accountStatusLabel}</dt>
-                  <dd className="font-semibold text-emerald-600 dark:text-emerald-400">
-                    {t.statusActive}
+                  <dd className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span>{t.statusActive}</span>
                   </dd>
                 </div>
               </dl>
@@ -479,14 +495,16 @@ export default function SettingsView({
 
             {/* Language & Light/Dark Mode Preferences */}
             <section className="card p-5 space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
-                <AppIcon name="globe" size={17} className="text-blue-600 dark:text-blue-400" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <span className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] grid place-items-center shrink-0">
+                  <AppIcon name="globe" size={16} />
+                </span>
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                   {t.preferencesTitle}
                 </h3>
               </div>
 
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {t.languageLabel}
                 <select
                   disabled={prefBusy}
@@ -511,7 +529,7 @@ export default function SettingsView({
               </label>
 
               <div>
-                <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <span className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300 mb-2">
                   {t.appearanceLabel}
                 </span>
                 <div className="grid grid-cols-2 gap-2.5">
@@ -527,10 +545,10 @@ export default function SettingsView({
                         setPrefBusy(false);
                       }
                     }}
-                    className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
                       theme === 'light'
-                        ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        ? 'border-[#0E7490] bg-brand-50 text-[#0E7490] ring-1 ring-[#0E7490]/20 dark:bg-[#132942] dark:text-[#22D3EE]'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#132942]'
                     }`}
                   >
                     <AppIcon name="sun" size={15} />
@@ -548,10 +566,10 @@ export default function SettingsView({
                         setPrefBusy(false);
                       }
                     }}
-                    className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
                       theme === 'dark'
-                        ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:border-blue-500 dark:text-blue-200'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        ? 'border-[#0891B2] bg-[#132942] text-cyan-100 ring-1 ring-[#0891B2]/35'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-[#132942]'
                     }`}
                   >
                     <AppIcon name="moon" size={15} />
@@ -564,12 +582,17 @@ export default function SettingsView({
 
           {/* Change Password Form */}
           <form onSubmit={handleAccountPassword} className="card p-5 sm:p-6 lg:col-span-7 space-y-4 h-fit">
-            <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.changePasswordTitle}</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.passwordPolicyHint}</p>
+            <div className="flex items-start gap-3 pb-3.5 border-b border-slate-100 dark:border-slate-800">
+              <span className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] ring-1 ring-[#0891B2]/20 grid place-items-center shrink-0">
+                <AppIcon name="lock" size={17} />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.changePasswordTitle}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.passwordPolicyHint}</p>
+              </div>
             </div>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.currentPasswordLabel}
               <PasswordInput
                 wrapperClassName="mt-1.5"
@@ -583,7 +606,7 @@ export default function SettingsView({
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {t.newPasswordLabel}
                 <PasswordInput
                   wrapperClassName="mt-1.5"
@@ -597,7 +620,7 @@ export default function SettingsView({
                 />
               </label>
 
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {t.confirmPasswordLabel}
                 <PasswordInput
                   wrapperClassName="mt-1.5"
@@ -615,7 +638,7 @@ export default function SettingsView({
             {pwMsg && (
               <p
                 role="alert"
-                className={`rounded-lg border px-3.5 py-2.5 text-xs font-medium ${
+                className={`rounded-xl border px-3.5 py-2.5 text-xs font-medium ${
                   pwMsg.type === 'ok'
                     ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
                     : 'border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
@@ -626,7 +649,7 @@ export default function SettingsView({
             )}
 
             <div className="pt-2 flex justify-end">
-              <button type="submit" disabled={pwBusy} className="btn btn-primary text-xs px-5">
+              <button type="submit" disabled={pwBusy} className="btn btn-primary text-xs px-6">
                 {pwBusy ? t.saving : t.updatePasswordButton}
               </button>
             </div>
@@ -638,7 +661,7 @@ export default function SettingsView({
       {tab === 'admin' && isAdmin && (
         <div className="space-y-5">
           {/* Admin Sub-tabs */}
-          <div className="flex flex-wrap gap-2">
+          <div className="card p-2 flex flex-wrap gap-1.5">
             {(
               [
                 ['users', 'users', t.adminUsers],
@@ -649,29 +672,36 @@ export default function SettingsView({
                 ['reindex', 'refresh', t.adminReindex],
                 ['audit', 'audit', t.adminAudit],
               ] as [AdminSubTab, string, string][]
-            ).map(([key, icon, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setAdminSub(key)}
-                className={`btn text-xs ${adminSub === key ? 'btn-primary' : 'btn-muted'}`}
-              >
-                <AppIcon name={icon} size={14} />
-                <span>{label}</span>
-              </button>
-            ))}
+            ).map(([key, icon, label]) => {
+              const active = adminSub === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setAdminSub(key)}
+                  className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                    active
+                      ? 'bg-[#0E7490] text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#132942] hover:text-[#0F2137] dark:hover:text-white'
+                  }`}
+                >
+                  <AppIcon name={icon} size={14} />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* 1. EMPLOYEES MANAGEMENT (with Flexible Full Name & Job Title) */}
+          {/* 1. EMPLOYEES MANAGEMENT */}
           {adminSub === 'users' && (
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
               <form onSubmit={handleCreateUser} className="card p-5 xl:col-span-5 space-y-3.5 h-fit">
                 <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.createUserTitle}</h3>
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.createUserTitle}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.tempPasswordHint}</p>
                 </div>
 
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                   {t.fullNameLabel}
                   <input
                     className="field mt-1"
@@ -682,7 +712,7 @@ export default function SettingsView({
                   />
                 </label>
 
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                   {t.jobTitleLabel}
                   <input
                     className="field mt-1"
@@ -694,7 +724,7 @@ export default function SettingsView({
                 </label>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                     {t.usernameLabel}
                     <input
                       className="field mt-1"
@@ -708,7 +738,7 @@ export default function SettingsView({
                     />
                   </label>
 
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                     {t.departmentLabel}
                     <input
                       className="field mt-1"
@@ -720,7 +750,7 @@ export default function SettingsView({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                     {t.tempPasswordLabel}
                     <PasswordInput
                       wrapperClassName="mt-1"
@@ -735,7 +765,7 @@ export default function SettingsView({
                     />
                   </label>
 
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                     {t.roleLabel}
                     <select
                       className="field mt-1"
@@ -754,10 +784,10 @@ export default function SettingsView({
                 </div>
 
                 {/* Admin-controlled Print Permission Toggle */}
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 cursor-pointer">
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-[#132942]/50 px-3.5 py-2.5 cursor-pointer">
                   <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100">
-                      <AppIcon name="printer" size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-[#0F2137] dark:text-slate-100">
+                      <AppIcon name="printer" size={14} className="text-[#0E7490] dark:text-[#22D3EE] shrink-0" />
                       <span>{t.printPermissionLabel}</span>
                     </span>
                     <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -773,14 +803,14 @@ export default function SettingsView({
                     checked={uRole === 'admin' ? true : uCanPrint}
                     disabled={uRole === 'admin'}
                     onChange={(e) => setUCanPrint(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                    className="w-4 h-4 accent-[#0E7490] cursor-pointer shrink-0"
                   />
                 </label>
 
                 {uNotice && (
                   <p
                     role="alert"
-                    className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                    className={`rounded-xl border px-3 py-2 text-xs font-medium ${
                       uNotice.type === 'ok'
                         ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
                         : 'border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
@@ -796,10 +826,22 @@ export default function SettingsView({
               </form>
 
               <section className="card p-5 xl:col-span-7 overflow-x-auto">
-                <div className="pb-3 mb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    {t.usersListTitle} · <span dir="ltr" className="tabular-nums">{users.length}</span>
+                <div className="pb-3.5 mb-3 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
+                    {t.usersListTitle} · <span dir="ltr" className="tabular-nums">{filteredTableUsers.length}</span>
                   </h3>
+                  <div className="relative w-full sm:w-56">
+                    <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <AppIcon name="search" size={14} />
+                    </span>
+                    <input
+                      type="search"
+                      value={userTableSearch}
+                      onChange={(e) => setUserTableSearch(e.target.value)}
+                      placeholder={t.searchEmployeesPlaceholder}
+                      className="field field-icon-start py-1.5 min-h-[34px] text-xs"
+                    />
+                  </div>
                 </div>
                 <table className="w-full text-xs text-start">
                   <thead>
@@ -812,20 +854,27 @@ export default function SettingsView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {users.map((u) => {
+                    {filteredTableUsers.map((u) => {
                       const isRowAdmin = u.role === 'admin';
                       const rowCanPrint = Boolean(isRowAdmin || u.can_print);
                       return (
-                        <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                        <tr key={u.id} className="hover:bg-slate-50/75 dark:hover:bg-[#132942]/40 transition-colors">
                           <td className="py-3 pe-2">
-                            <div className="font-semibold text-slate-900 dark:text-white">
-                              {u.full_name || u.username}
-                            </div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
-                              @{u.username}
+                            <div className="flex items-center gap-2.5">
+                              <span className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] font-bold text-[11px] grid place-items-center shrink-0">
+                                {(u.full_name || u.username).slice(0, 1).toUpperCase()}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-[#0F2137] dark:text-white truncate">
+                                  {u.full_name || u.username}
+                                </div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
+                                  @{u.username}
+                                </div>
+                              </div>
                             </div>
                             {u.must_change_password && (
-                              <span className="block mt-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              <span className="block mt-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                                 {t.pendingPwChange}
                               </span>
                             )}
@@ -849,7 +898,7 @@ export default function SettingsView({
                                 className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                                   rowCanPrint
                                     ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:border-blue-300'
+                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#132942]/60 text-slate-500 dark:text-slate-400 hover:border-[#0891B2]'
                                 }`}
                               >
                                 <span
@@ -863,13 +912,18 @@ export default function SettingsView({
                           </td>
                           <td className="py-3 pe-2">
                             <span
-                              className={`font-semibold ${
+                              className={`inline-flex items-center gap-1.5 font-semibold ${
                                 u.is_active !== false
                                   ? 'text-emerald-600 dark:text-emerald-400'
                                   : 'text-rose-600 dark:text-rose-400'
                               }`}
                             >
-                              {u.is_active !== false ? t.statusActive : t.statusInactive}
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  u.is_active !== false ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}
+                              />
+                              <span>{u.is_active !== false ? t.statusActive : t.statusInactive}</span>
                             </span>
                           </td>
                           <td className="py-3 text-end">
@@ -901,12 +955,12 @@ export default function SettingsView({
             </div>
           )}
 
-          {/* 2. EMPLOYEE DATA LINKING (ADMIN ONLY — MULTI-SELECT ANY NUMBER OF EMPLOYEES) */}
+          {/* 2. EMPLOYEE DATA LINKING */}
           {adminSub === 'linking' && (
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
               <form onSubmit={handleSaveLinkGroup} className="card p-5 xl:col-span-5 space-y-4 h-fit">
                 <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                     {editingGroupId ? t.editGroupTitle : t.createGroupTitle}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
@@ -914,7 +968,7 @@ export default function SettingsView({
                   </p>
                 </div>
 
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                   {t.groupNameLabel}
                   <input
                     className="field mt-1"
@@ -928,10 +982,10 @@ export default function SettingsView({
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    <span className="font-semibold text-[#0F2137] dark:text-slate-300">
                       {t.selectEmployeesLabel}
                     </span>
-                    <span className="text-blue-600 dark:text-blue-400 font-semibold tabular-nums">
+                    <span className="text-[#0E7490] dark:text-[#22D3EE] font-semibold tabular-nums">
                       {selectedMemberIds.length} {t.selectedCount}
                     </span>
                   </div>
@@ -952,8 +1006,8 @@ export default function SettingsView({
                           key={u.id}
                           className={`flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
                             checked
-                              ? 'bg-blue-50/70 dark:bg-blue-950/40'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                              ? 'bg-brand-50/80 dark:bg-[#132942]'
+                              : 'hover:bg-slate-50 dark:hover:bg-[#132942]/45'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -961,10 +1015,10 @@ export default function SettingsView({
                               type="checkbox"
                               checked={checked}
                               onChange={() => toggleMember(u.id)}
-                              className="w-4 h-4 accent-blue-600 rounded shrink-0"
+                              className="w-4 h-4 accent-[#0E7490] rounded shrink-0"
                             />
                             <div className="min-w-0">
-                              <span className="block text-xs font-semibold text-slate-900 dark:text-white truncate">
+                              <span className="block text-xs font-semibold text-[#0F2137] dark:text-white truncate">
                                 {u.full_name || u.username}
                               </span>
                               <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
@@ -1001,7 +1055,7 @@ export default function SettingsView({
 
               <section className="card p-5 xl:col-span-7 space-y-4">
                 <div className="pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                     {t.existingGroupsTitle} · <span dir="ltr" className="tabular-nums">{linkGroups.length}</span>
                   </h3>
                 </div>
@@ -1016,7 +1070,7 @@ export default function SettingsView({
                       <div key={group.id} className="py-4 first:pt-0 last:pb-0 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                            <h4 className="text-sm font-bold text-[#0F2137] dark:text-white">
                               {group.name}
                             </h4>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1047,10 +1101,13 @@ export default function SettingsView({
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-700 dark:text-slate-300">
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
                           {group.members.map((m) => (
-                            <span key={m.id} className="inline-flex items-center gap-1.5">
-                              <span className="w-5 h-5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-[10px] font-bold grid place-items-center">
+                            <span
+                              key={m.id}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-[#132942] border border-slate-200/80 dark:border-slate-700"
+                            >
+                              <span className="w-5 h-5 rounded-md bg-brand-50 dark:bg-[#0F2137] text-[#0E7490] dark:text-[#22D3EE] text-[10px] font-bold grid place-items-center">
                                 {m.display_name.slice(0, 1).toUpperCase()}
                               </span>
                               <span className="font-medium">{m.display_name}</span>
@@ -1073,33 +1130,40 @@ export default function SettingsView({
             <form onSubmit={handleSaveGemini} className="card p-6 max-w-2xl space-y-5">
               <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.geminiTitle}</h3>
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.geminiTitle}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                     {t.geminiDesc}
                   </p>
                 </div>
                 <span
-                  className={`text-xs font-semibold shrink-0 ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 ${
                     geminiSettings?.effective_configured
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-amber-600 dark:text-amber-400'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
                   }`}
                 >
-                  {geminiSettings?.has_db_key && geminiSettings.is_enabled
-                    ? t.geminiActiveDb
-                    : geminiSettings?.env_fallback_configured
-                    ? t.geminiActiveFallback
-                    : t.geminiInactive}
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      geminiSettings?.effective_configured ? 'bg-emerald-500' : 'bg-amber-500'
+                    }`}
+                  />
+                  <span>
+                    {geminiSettings?.has_db_key && geminiSettings.is_enabled
+                      ? t.geminiActiveDb
+                      : geminiSettings?.env_fallback_configured
+                      ? t.geminiActiveFallback
+                      : t.geminiInactive}
+                  </span>
                 </span>
               </div>
 
               {geminiSettings?.has_db_key && (
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="rounded-xl bg-slate-50 dark:bg-[#132942] border border-slate-200/80 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <span className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                       {t.geminiSavedKey}
                     </span>
-                    <b dir="ltr" className="block mt-1 font-mono text-sm text-slate-900 dark:text-white">
+                    <b dir="ltr" className="block mt-1 font-mono text-sm text-[#0F2137] dark:text-white">
                       {geminiSettings.masked_key || '••••••••'}
                     </b>
                   </div>
@@ -1114,7 +1178,7 @@ export default function SettingsView({
                 </div>
               )}
 
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {geminiSettings?.has_db_key ? t.geminiKeyUpdateLabel : t.geminiKeyLabel}
                 <PasswordInput
                   wrapperClassName="mt-1.5"
@@ -1131,7 +1195,7 @@ export default function SettingsView({
 
               <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4 cursor-pointer">
                 <div>
-                  <b className="block text-xs font-semibold text-slate-900 dark:text-white">
+                  <b className="block text-xs font-semibold text-[#0F2137] dark:text-white">
                     {t.geminiEnableLabel}
                   </b>
                   <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1142,14 +1206,14 @@ export default function SettingsView({
                   type="checkbox"
                   checked={geminiEnabled}
                   onChange={(e) => setGeminiEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-[#0E7490] cursor-pointer shrink-0"
                 />
               </label>
 
               {geminiMsg && (
                 <p
                   role="alert"
-                  className={`rounded-lg border px-4 py-2.5 text-xs font-medium ${
+                  className={`rounded-xl border px-4 py-2.5 text-xs font-medium ${
                     geminiMsg.type === 'ok'
                       ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
                       : 'border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300'
@@ -1179,27 +1243,27 @@ export default function SettingsView({
           {adminSub === 'storage' && (
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="card p-4">
+                <div className="card p-4 border-s-[3px] border-s-[#0E7490]">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{t.storedDocs}</span>
-                  <b className="block mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums" dir="ltr">
+                  <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {storageMetrics?.saved_files ?? systemSummary?.total_documents ?? 0}
                   </b>
                 </div>
-                <div className="card p-4">
+                <div className="card p-4 border-s-[3px] border-s-[#0891B2]">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{t.storedSize}</span>
-                  <b className="block mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums" dir="ltr">
+                  <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {formatBytes(storageMetrics?.stored_file_bytes ?? systemSummary?.stored_file_bytes)}
                   </b>
                 </div>
-                <div className="card p-4">
+                <div className="card p-4 border-s-[3px] border-s-emerald-500">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{t.freeSpace}</span>
-                  <b className="block mt-1.5 text-2xl font-bold text-slate-900 dark:text-white tabular-nums" dir="ltr">
+                  <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {diskFree ? formatBytes(diskFree) : '—'}
                   </b>
                 </div>
-                <div className="card p-4">
+                <div className="card p-4 border-s-[3px] border-s-amber-500">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{t.storageType}</span>
-                  <b className="block mt-1.5 text-2xl font-bold text-slate-900 dark:text-white">
+                  <b className="block mt-1.5 text-2xl font-bold text-[#0F2137] dark:text-white">
                     {(storageMetrics?.provider || systemSummary?.provider || provider) === 's3'
                       ? t.storageCloud
                       : t.storageLocal}
@@ -1209,18 +1273,21 @@ export default function SettingsView({
 
               {diskTotal > 0 && (
                 <section className="card p-5">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#0F2137] dark:text-slate-300 mb-2">
                     <span>{t.diskUsage}</span>
-                    <span dir="ltr" className="tabular-nums">{diskPct}%</span>
+                    <span dir="ltr" className="tabular-nums text-[#0E7490] dark:text-[#22D3EE]">{diskPct}%</span>
                   </div>
-                  <div className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${diskPct}%` }} />
+                  <div className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-[#132942] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#0E7490] to-[#0891B2] transition-all"
+                      style={{ width: `${diskPct}%` }}
+                    />
                   </div>
                 </section>
               )}
 
               <section className="card p-5 space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.advancedStorageTitle}</h3>
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.advancedStorageTitle}</h3>
                 {!stepUpActive ? (
                   <form
                     onSubmit={async (e) => {
@@ -1245,6 +1312,7 @@ export default function SettingsView({
                       placeholder={t.masterPasswordLabel}
                       showLabel={t.showPassword}
                       hideLabel={t.hidePassword}
+                      startIcon={<AppIcon name="lock" size={16} />}
                       required
                     />
                     <button type="submit" disabled={storageBusy} className="btn btn-primary text-xs">
@@ -1254,7 +1322,7 @@ export default function SettingsView({
                 ) : (
                   <div className="space-y-4">
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5 max-w-lg">
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 flex-1">
+                      <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300 flex-1">
                         {t.storageType}
                         <select
                           className="field mt-1"
@@ -1304,7 +1372,7 @@ export default function SettingsView({
 
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <b className="text-sm text-slate-900 dark:text-white block">{t.backupTitle}</b>
+                        <b className="text-sm text-[#0F2137] dark:text-white block">{t.backupTitle}</b>
                         <span className="text-xs text-slate-500 dark:text-slate-400">{t.backupDesc}</span>
                       </div>
                       <button
@@ -1323,14 +1391,15 @@ export default function SettingsView({
                         }}
                         className="btn btn-primary text-xs shrink-0"
                       >
-                        {t.downloadBackup}
+                        <AppIcon name="download" size={14} />
+                        <span>{t.downloadBackup}</span>
                       </button>
                     </div>
                   </div>
                 )}
 
                 {storageMsg && (
-                  <p className="text-xs font-medium text-blue-700 dark:text-blue-300">{storageMsg}</p>
+                  <p className="text-xs font-semibold text-[#0E7490] dark:text-[#22D3EE]">{storageMsg}</p>
                 )}
               </section>
             </div>
@@ -1340,7 +1409,7 @@ export default function SettingsView({
           {adminSub === 'taxonomy' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <section className="card p-5 space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.manageFoldersTitle}</h3>
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.manageFoldersTitle}</h3>
                 <form
                   onSubmit={async (e) => {
                     e.preventDefault();
@@ -1371,7 +1440,7 @@ export default function SettingsView({
                   {folders.map((f) => (
                     <div key={f.id} className="py-2.5 flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <b className="text-xs font-semibold text-slate-900 dark:text-white block truncate">
+                        <b className="text-xs font-semibold text-[#0F2137] dark:text-white block truncate">
                           {f.name}
                         </b>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1395,7 +1464,7 @@ export default function SettingsView({
               <section className="card p-5 space-y-5">
                 {/* Standardized Departments Management */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                     {t.manageDepartmentsTitle}
                   </h3>
                   <form
@@ -1430,10 +1499,10 @@ export default function SettingsView({
                       {departments.length > 0 ? ` (${departments.join(' · ')})` : ''}
                     </p>
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-lg border border-slate-200/70 dark:border-slate-800 px-3">
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800 px-3">
                       {taxonomy.departments.map((item) => (
                         <div key={item.id} className="py-2 flex items-center justify-between gap-2 text-xs">
-                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                          <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate">
                             {item.name}
                           </span>
                           <button
@@ -1460,7 +1529,7 @@ export default function SettingsView({
 
                 {/* Standardized Classifications Management */}
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
                     {t.manageClassificationsTitle}
                   </h3>
                   <form
@@ -1495,10 +1564,10 @@ export default function SettingsView({
                       {categories.length > 0 ? ` (${categories.join(' · ')})` : ''}
                     </p>
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-lg border border-slate-200/70 dark:border-slate-800 px-3">
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800 px-3">
                       {taxonomy.classifications.map((item) => (
                         <div key={item.id} className="py-2 flex items-center justify-between gap-2 text-xs">
-                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                          <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate">
                             {item.name}
                           </span>
                           <button
@@ -1530,19 +1599,19 @@ export default function SettingsView({
           {adminSub === 'reindex' && (
             <section className="card p-5 max-w-2xl space-y-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.reindexTitle}</h3>
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.reindexTitle}</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.reindexDesc}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3.5">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.indexedDocsLabel}</span>
-                  <b className="block mt-1 text-xl font-bold text-slate-900 dark:text-white tabular-nums" dir="ltr">
+                <div className="rounded-xl bg-brand-50/70 dark:bg-[#132942] border border-brand-200/70 dark:border-[#0891B2]/25 p-3.5">
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{t.indexedDocsLabel}</span>
+                  <b className="block mt-1 text-xl font-bold text-[#0E7490] dark:text-[#22D3EE] tabular-nums" dir="ltr">
                     {systemSummary?.indexed_documents ?? 0}
                   </b>
                 </div>
-                <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3.5">
+                <div className="rounded-xl bg-slate-50 dark:bg-[#132942]/60 border border-slate-200/80 dark:border-slate-700 p-3.5">
                   <span className="text-xs text-slate-500 dark:text-slate-400">{t.pendingDocsLabel}</span>
-                  <b className="block mt-1 text-xl font-bold text-slate-900 dark:text-white tabular-nums" dir="ltr">
+                  <b className="block mt-1 text-xl font-bold text-[#0F2137] dark:text-white tabular-nums" dir="ltr">
                     {systemSummary?.pending_documents ?? 0}
                   </b>
                 </div>
@@ -1564,7 +1633,8 @@ export default function SettingsView({
                   }}
                   className="btn btn-primary text-xs"
                 >
-                  {t.reindexPending}
+                  <AppIcon name="refresh" size={14} />
+                  <span>{t.reindexPending}</span>
                 </button>
                 <button
                   type="button"
@@ -1586,7 +1656,7 @@ export default function SettingsView({
                 </button>
               </div>
               {reindexMsg && (
-                <p className="text-xs font-medium text-blue-700 dark:text-blue-300">{reindexMsg}</p>
+                <p className="text-xs font-semibold text-[#0E7490] dark:text-[#22D3EE]">{reindexMsg}</p>
               )}
             </section>
           )}
@@ -1594,13 +1664,16 @@ export default function SettingsView({
           {/* 7. AUDIT LOG */}
           {adminSub === 'audit' && (
             <section className="card overflow-hidden">
-              <div className="p-5 border-b border-slate-100 dark:border-slate-800">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.auditTitle}</h3>
+              <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.auditTitle}</h3>
+                <span dir="ltr" className="text-xs font-semibold text-slate-500 tabular-nums">
+                  {audit.length}
+                </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-start">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                    <tr className="bg-slate-50 dark:bg-[#0B192B]/50 text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
                       <th className="p-3.5 font-semibold text-start">{t.auditAction}</th>
                       <th className="p-3.5 font-semibold text-start">{t.auditResource}</th>
                       <th className="p-3.5 font-semibold text-start">{t.auditTime}</th>
@@ -1608,9 +1681,14 @@ export default function SettingsView({
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                     {audit.map((a) => (
-                      <tr key={a.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                        <td className="p-3.5 font-medium text-slate-900 dark:text-white" dir="ltr">
-                          {a.action}
+                      <tr key={a.id} className="hover:bg-slate-50/75 dark:hover:bg-[#132942]/40">
+                        <td className="p-3.5">
+                          <span
+                            dir="ltr"
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE]"
+                          >
+                            {a.action}
+                          </span>
                         </td>
                         <td className="p-3.5 text-slate-600 dark:text-slate-400">{a.resource_type}</td>
                         <td className="p-3.5 text-slate-500 dark:text-slate-400 tabular-nums" dir="ltr">
@@ -1635,24 +1713,24 @@ export default function SettingsView({
           role="dialog"
           aria-modal="true"
           dir={dir}
-          className="fixed inset-0 z-[85] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[85] bg-[#091524]/70 backdrop-blur-sm flex items-center justify-center p-4"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !editBusy) setEditingUser(null);
           }}
         >
-          <form onSubmit={handleSaveEditUser} className="card max-w-md w-full p-6 shadow-2xl space-y-3.5">
+          <form onSubmit={handleSaveEditUser} className="card-elevated max-w-md w-full p-6 space-y-3.5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.editUserTitle}</h3>
+              <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.editUserTitle}</h3>
               <button
                 type="button"
                 onClick={() => setEditingUser(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                className="p-1 text-slate-400 hover:text-[#0F2137] dark:hover:text-slate-200"
               >
                 <AppIcon name="x" size={16} />
               </button>
             </div>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.fullNameLabel}
               <input
                 className="field mt-1"
@@ -1663,7 +1741,7 @@ export default function SettingsView({
               />
             </label>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.jobTitleLabel}
               <input
                 className="field mt-1"
@@ -1675,7 +1753,7 @@ export default function SettingsView({
             </label>
 
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {t.usernameLabel}
                 <input
                   className="field mt-1"
@@ -1686,7 +1764,7 @@ export default function SettingsView({
                 />
               </label>
 
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
                 {t.departmentLabel}
                 <input
                   className="field mt-1"
@@ -1696,7 +1774,7 @@ export default function SettingsView({
               </label>
             </div>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.roleLabel}
               <select
                 className="field mt-1"
@@ -1715,8 +1793,8 @@ export default function SettingsView({
 
             <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 cursor-pointer">
               <div className="min-w-0">
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100">
-                  <AppIcon name="printer" size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-[#0F2137] dark:text-slate-100">
+                  <AppIcon name="printer" size={14} className="text-[#0E7490] dark:text-[#22D3EE] shrink-0" />
                   <span>{t.printPermissionLabel}</span>
                 </span>
                 <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -1732,11 +1810,11 @@ export default function SettingsView({
                 checked={editRole === 'admin' ? true : editCanPrint}
                 disabled={editRole === 'admin'}
                 onChange={(e) => setEditCanPrint(e.target.checked)}
-                className="w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                className="w-4 h-4 accent-[#0E7490] cursor-pointer shrink-0"
               />
             </label>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.resetPasswordOptional}
               <PasswordInput
                 wrapperClassName="mt-1"

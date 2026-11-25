@@ -82,10 +82,10 @@ export default function PWAInstallButton({
         onClick={handleInstall}
         className={
           dark
-            ? 'w-full flex items-center justify-center gap-2 rounded-lg border border-blue-400/25 bg-blue-500/15 px-3 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/25 transition-colors'
+            ? 'w-full flex items-center justify-center gap-2 rounded-xl border border-[#0891B2]/35 bg-[#0E7490]/20 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-[#0E7490]/35 transition-colors'
             : `btn inline-flex items-center gap-2 text-xs ${
                 compact
-                  ? 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 px-3 py-2'
+                  ? 'border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 px-3 py-2'
                   : 'btn-primary'
               }`
         }
@@ -110,13 +110,13 @@ export default function PWAInstallButton({
 
       {showIOSGuide && (
         <div
-          className="fixed inset-0 z-[95] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[95] bg-[#091524]/70 backdrop-blur-sm flex items-center justify-center p-4"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setShowIOSGuide(false);
           }}
         >
-          <div className="card max-w-md w-full p-6 text-start" dir={dir}>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">{label}</h3>
+          <div className="card-elevated max-w-md w-full p-6 text-start" dir={dir}>
+            <h3 className="text-base font-bold text-[#0F2137] dark:text-white">{label}</h3>
             <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
               {dir === 'rtl'
                 ? 'لتثبيت التطبيق على iPhone أو iPad، اضغط على زر المشاركة في Safari ثم اختر "إضافة إلى الشاشة الرئيسية".'

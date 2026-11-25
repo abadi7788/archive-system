@@ -3,14 +3,15 @@ import React from 'react';
 const glyphs: Record<string, React.ReactNode> = {
   archive: (
     <>
-      <path d="M4 7.5h16v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-12Z" />
-      <path d="M3 4.5h18v3H3zM9.5 12h5" />
+      <path d="M4 7.5h16v12a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-12Z" />
+      <rect x="2.75" y="4" width="18.5" height="3.5" rx="1" />
+      <path d="M9.5 12h5" />
     </>
   ),
   upload: (
     <>
       <path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5" />
-      <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+      <path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" />
     </>
   ),
   folder: (
@@ -67,6 +68,23 @@ const glyphs: Record<string, React.ReactNode> = {
     </>
   ),
   filter: <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />,
+  sliders: (
+    <>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="9" cy="6" r="2" fill="currentColor" />
+      <circle cx="15" cy="12" r="2" fill="currentColor" />
+      <circle cx="10" cy="18" r="2" fill="currentColor" />
+    </>
+  ),
+  sort: (
+    <>
+      <path d="m3 16 4 4 4-4" />
+      <path d="M7 20V4" />
+      <path d="M11 4h10M11 8h7M11 12h4" />
+    </>
+  ),
   refresh: (
     <>
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -134,6 +152,12 @@ const glyphs: Record<string, React.ReactNode> = {
   ),
   x: <path d="M18 6 6 18M6 6l12 12" />,
   check: <polyline points="20 6 9 17 4 12" />,
+  checkCircle: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="16 9.5 10.75 14.75 8 12" />
+    </>
+  ),
   grid: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -225,6 +249,35 @@ const glyphs: Record<string, React.ReactNode> = {
     </>
   ),
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
+  shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />,
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="m12 3 1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z" />
+      <path d="M19 15v4M17 17h4" />
+    </>
+  ),
+  chat: <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  share: (
+    <>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </>
+  ),
 };
 
 export function AppIcon({
@@ -267,22 +320,24 @@ export default function BrandMark({
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 48 48" width={size * 0.58} height={size * 0.58} fill="none">
+      <svg viewBox="0 0 48 48" width={size * 0.6} height={size * 0.6} fill="none">
         <path
-          d="M12 10.5A3.5 3.5 0 0 1 15.5 7h13L36 14v23a3.5 3.5 0 0 1-3.5 3.5h-17A3.5 3.5 0 0 1 12 37V10.5Z"
+          d="M11.5 10.5A3.5 3.5 0 0 1 15 7h13.2L36 14.5v22A3.5 3.5 0 0 1 32.5 40H15a3.5 3.5 0 0 1-3.5-3.5v-26Z"
           fill="white"
-          fillOpacity=".97"
+          fillOpacity=".98"
         />
         <path
-          d="M28.5 7v8h7.2M18 22h12M18 27.5h12M18 33h7"
-          stroke="#1D4ED8"
+          d="M28.2 7v8h7.4M17.5 22h12.5M17.5 27.5h12.5M17.5 33h7"
+          stroke="#0E7490"
           strokeWidth="2.4"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
+        <circle cx="33.5" cy="34.5" r="7" fill="#0891B2" stroke="white" strokeWidth="1.8" />
         <path
-          d="m30 33 2.2 2.2 4.8-5"
-          stroke="#2563EB"
-          strokeWidth="2.6"
+          d="m30.3 34.6 2.1 2.1 4.4-4.6"
+          stroke="white"
+          strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
         />

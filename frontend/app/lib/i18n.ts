@@ -1584,7 +1584,7 @@ export function statusDisplayMeta(status: string | undefined, t: TranslationKeys
     return { label: t.statusIndexed, dotClass: 'bg-emerald-500', textClass: 'text-emerald-700 dark:text-emerald-400' };
   }
   if (status === 'processing') {
-    return { label: t.statusProcessing, dotClass: 'bg-blue-500', textClass: 'text-blue-700 dark:text-blue-400' };
+    return { label: t.statusProcessing, dotClass: 'bg-[#0891B2]', textClass: 'text-[#0E7490] dark:text-[#22D3EE]' };
   }
   if (status === 'failed') {
     return { label: t.statusFailed, dotClass: 'bg-rose-500', textClass: 'text-rose-700 dark:text-rose-400' };
