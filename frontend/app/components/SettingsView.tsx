@@ -11,6 +11,7 @@ import {
   LocaleCode,
   StorageMetrics,
   SystemSummary,
+  TaxonomyData,
   ThemeMode,
   User,
   formatBytes,
@@ -26,6 +27,7 @@ export default function SettingsView({
   users,
   linkGroups,
   folders,
+  taxonomy,
   departments,
   categories,
   audit,
@@ -54,6 +56,8 @@ export default function SettingsView({
   onCreateBackup,
   onCreateFolder,
   onDeleteFolder,
+  onCreateTaxonomyItem,
+  onDeleteTaxonomyItem,
   onTriggerReindex,
   onRefreshAdmin,
 }: {
@@ -61,6 +65,7 @@ export default function SettingsView({
   users: User[];
   linkGroups: EmployeeLinkGroup[];
   folders: FolderItem[];
+  taxonomy: TaxonomyData;
   departments: string[];
   categories: string[];
   audit: AuditItem[];
@@ -82,6 +87,7 @@ export default function SettingsView({
     password: string;
     role: string;
     department: string;
+    can_print: boolean;
   }) => Promise<void>;
   onUpdateUser: (
     userId: string,
@@ -92,6 +98,7 @@ export default function SettingsView({
       role?: string;
       department?: string | null;
       is_active?: boolean;
+      can_print?: boolean;
       password?: string;
     }
   ) => Promise<void>;
@@ -111,6 +118,8 @@ export default function SettingsView({
   onCreateBackup: () => Promise<void>;
   onCreateFolder: (name: string, parentId: string | null) => Promise<void>;
   onDeleteFolder: (folder: FolderItem) => Promise<void>;
+  onCreateTaxonomyItem: (kind: 'department' | 'classification', name: string) => Promise<void>;
+  onDeleteTaxonomyItem: (itemId: string) => Promise<void>;
   onTriggerReindex: (force: boolean) => Promise<{ queued_count: number; message: string }>;
   onRefreshAdmin: () => Promise<void>;
 }) {
@@ -128,13 +137,14 @@ export default function SettingsView({
   const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [pwBusy, setPwBusy] = useState(false);
 
-  // Admin Create User Form (flexible Full Name & Job Title)
+  // Admin Create User Form (flexible Full Name, Job Title, Print Permission)
   const [uName, setUName] = useState('');
   const [uFullName, setUFullName] = useState('');
   const [uJobTitle, setUJobTitle] = useState('');
   const [uPass, setUPass] = useState('');
   const [uRole, setURole] = useState('archiver');
   const [uDept, setUDept] = useState('');
+  const [uCanPrint, setUCanPrint] = useState(false);
   const [uBusy, setUBusy] = useState(false);
   const [uNotice, setUNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -145,6 +155,7 @@ export default function SettingsView({
   const [editJobTitle, setEditJobTitle] = useState('');
   const [editRole, setEditRole] = useState('archiver');
   const [editDept, setEditDept] = useState('');
+  const [editCanPrint, setEditCanPrint] = useState(false);
   const [editPass, setEditPass] = useState('');
   const [editBusy, setEditBusy] = useState(false);
 
@@ -174,6 +185,9 @@ export default function SettingsView({
   const [storageMsg, setStorageMsg] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
   const [folderBusy, setFolderBusy] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newClassName, setNewClassName] = useState('');
+  const [taxBusy, setTaxBusy] = useState(false);
   const [reindexBusy, setReindexBusy] = useState(false);
   const [reindexMsg, setReindexMsg] = useState('');
 
@@ -233,6 +247,7 @@ export default function SettingsView({
         password: uPass,
         role: uRole,
         department: uDept.trim(),
+        can_print: uRole === 'admin' ? true : uCanPrint,
       });
       setUName('');
       setUFullName('');
@@ -240,6 +255,7 @@ export default function SettingsView({
       setUPass('');
       setUDept('');
       setURole('archiver');
+      setUCanPrint(false);
       setUNotice({ type: 'ok', text: t.savedSuccess });
     } catch (e: any) {
       setUNotice({ type: 'err', text: e?.message || t.errorGeneric });
@@ -255,6 +271,7 @@ export default function SettingsView({
     setEditJobTitle(target.job_title || '');
     setEditRole(target.role);
     setEditDept(target.department || '');
+    setEditCanPrint(Boolean(target.role === 'admin' || target.can_print));
     setEditPass('');
   }
 
@@ -276,6 +293,7 @@ export default function SettingsView({
         job_title: editJobTitle.trim() || null,
         role: editRole,
         department: editDept.trim() || null,
+        can_print: editRole === 'admin' ? true : editCanPrint,
         ...(editPass.trim() ? { password: editPass } : {}),
       });
       setEditingUser(null);
@@ -722,7 +740,11 @@ export default function SettingsView({
                     <select
                       className="field mt-1"
                       value={uRole}
-                      onChange={(e) => setURole(e.target.value)}
+                      onChange={(e) => {
+                        const nextRole = e.target.value;
+                        setURole(nextRole);
+                        if (nextRole === 'admin') setUCanPrint(true);
+                      }}
                     >
                       <option value="archiver">{t.roleArchiver}</option>
                       <option value="viewer">{t.roleViewer}</option>
@@ -730,6 +752,30 @@ export default function SettingsView({
                     </select>
                   </label>
                 </div>
+
+                {/* Admin-controlled Print Permission Toggle */}
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 cursor-pointer">
+                  <div className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      <AppIcon name="printer" size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>{t.printPermissionLabel}</span>
+                    </span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {uRole === 'admin'
+                        ? t.printAdminAlways
+                        : uCanPrint
+                        ? t.printAllowed
+                        : t.printRestricted}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={uRole === 'admin' ? true : uCanPrint}
+                    disabled={uRole === 'admin'}
+                    onChange={(e) => setUCanPrint(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+                  />
+                </label>
 
                 {uNotice && (
                   <p
@@ -760,67 +806,95 @@ export default function SettingsView({
                     <tr className="text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
                       <th className="pb-2.5 font-semibold text-start">{t.fullNameLabel}</th>
                       <th className="pb-2.5 font-semibold text-start">{t.jobTitleLabel}</th>
-                      <th className="pb-2.5 font-semibold text-start">{t.departmentLabel}</th>
+                      <th className="pb-2.5 font-semibold text-start">{t.printPermissionLabel}</th>
                       <th className="pb-2.5 font-semibold text-start">{t.accountStatusLabel}</th>
                       <th className="pb-2.5 font-semibold text-end" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                        <td className="py-3 pe-2">
-                          <div className="font-semibold text-slate-900 dark:text-white">
-                            {u.full_name || u.username}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
-                            @{u.username}
-                          </div>
-                          {u.must_change_password && (
-                            <span className="block mt-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                              {t.pendingPwChange}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 pe-2 text-slate-700 dark:text-slate-300">
-                          <div>{u.job_title || roleDisplayLabel(u.role, t)}</div>
-                          <div className="text-[11px] text-slate-400">{roleDisplayLabel(u.role, t)}</div>
-                        </td>
-                        <td className="py-3 pe-2 text-slate-600 dark:text-slate-400">
-                          {u.department || '—'}
-                        </td>
-                        <td className="py-3 pe-2">
-                          <span
-                            className={`font-semibold ${
-                              u.is_active !== false
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-rose-600 dark:text-rose-400'
-                            }`}
-                          >
-                            {u.is_active !== false ? t.statusActive : t.statusInactive}
-                          </span>
-                        </td>
-                        <td className="py-3 text-end">
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openEditUser(u)}
-                              className="btn btn-muted py-1 px-2.5 text-xs"
-                            >
-                              {t.edit}
-                            </button>
-                            {u.id !== user.id && (
+                    {users.map((u) => {
+                      const isRowAdmin = u.role === 'admin';
+                      const rowCanPrint = Boolean(isRowAdmin || u.can_print);
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                          <td className="py-3 pe-2">
+                            <div className="font-semibold text-slate-900 dark:text-white">
+                              {u.full_name || u.username}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
+                              @{u.username}
+                            </div>
+                            {u.must_change_password && (
+                              <span className="block mt-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                {t.pendingPwChange}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 pe-2 text-slate-700 dark:text-slate-300">
+                            <div>{u.job_title || roleDisplayLabel(u.role, t)}</div>
+                            <div className="text-[11px] text-slate-400">
+                              {[roleDisplayLabel(u.role, t), u.department].filter(Boolean).join(' · ')}
+                            </div>
+                          </td>
+                          <td className="py-3 pe-2">
+                            {isRowAdmin ? (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                <AppIcon name="printer" size={13} />
+                                <span>{t.printAllowed}</span>
+                              </span>
+                            ) : (
                               <button
                                 type="button"
-                                onClick={() => onUpdateUser(u.id, { is_active: u.is_active === false })}
-                                className="btn btn-muted py-1 px-2.5 text-xs"
+                                onClick={() => onUpdateUser(u.id, { can_print: !rowCanPrint })}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                  rowCanPrint
+                                    ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:border-blue-300'
+                                }`}
                               >
-                                {u.is_active !== false ? t.deactivate : t.activate}
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    rowCanPrint ? 'bg-emerald-500' : 'bg-slate-400'
+                                  }`}
+                                />
+                                <span>{rowCanPrint ? t.printAllowed : t.printRestricted}</span>
                               </button>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-3 pe-2">
+                            <span
+                              className={`font-semibold ${
+                                u.is_active !== false
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-rose-600 dark:text-rose-400'
+                              }`}
+                            >
+                              {u.is_active !== false ? t.statusActive : t.statusInactive}
+                            </span>
+                          </td>
+                          <td className="py-3 text-end">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditUser(u)}
+                                className="btn btn-muted py-1 px-2.5 text-xs"
+                              >
+                                {t.edit}
+                              </button>
+                              {u.id !== user.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => onUpdateUser(u.id, { is_active: u.is_active === false })}
+                                  className="btn btn-muted py-1 px-2.5 text-xs"
+                                >
+                                  {u.is_active !== false ? t.deactivate : t.activate}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </section>
@@ -1319,17 +1393,134 @@ export default function SettingsView({
               </section>
 
               <section className="card p-5 space-y-5">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.activeDepartments}</h3>
-                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {departments.length ? departments.join(' · ') : '—'}
-                  </p>
+                {/* Standardized Departments Management */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {t.manageDepartmentsTitle}
+                  </h3>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!newDeptName.trim()) return;
+                      setTaxBusy(true);
+                      try {
+                        await onCreateTaxonomyItem('department', newDeptName.trim());
+                        setNewDeptName('');
+                      } finally {
+                        setTaxBusy(false);
+                      }
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      className="field flex-1 text-xs"
+                      placeholder={t.addDepartmentPlaceholder}
+                      value={newDeptName}
+                      onChange={(e) => setNewDeptName(e.target.value)}
+                      maxLength={160}
+                      required
+                    />
+                    <button type="submit" disabled={taxBusy} className="btn btn-primary text-xs px-4">
+                      {t.addItemButton}
+                    </button>
+                  </form>
+                  {taxonomy.departments.length === 0 ? (
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      {t.noTaxonomyItems}
+                      {departments.length > 0 ? ` (${departments.join(' · ')})` : ''}
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-lg border border-slate-200/70 dark:border-slate-800 px-3">
+                      {taxonomy.departments.map((item) => (
+                        <div key={item.id} className="py-2 flex items-center justify-between gap-2 text-xs">
+                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {item.name}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={taxBusy}
+                            onClick={async () => {
+                              setTaxBusy(true);
+                              try {
+                                await onDeleteTaxonomyItem(item.id);
+                              } finally {
+                                setTaxBusy(false);
+                              }
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            aria-label={t.deleteAction}
+                          >
+                            <AppIcon name="trash" size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.activeClassifications}</h3>
-                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {categories.length ? categories.join(' · ') : '—'}
-                  </p>
+
+                {/* Standardized Classifications Management */}
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {t.manageClassificationsTitle}
+                  </h3>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!newClassName.trim()) return;
+                      setTaxBusy(true);
+                      try {
+                        await onCreateTaxonomyItem('classification', newClassName.trim());
+                        setNewClassName('');
+                      } finally {
+                        setTaxBusy(false);
+                      }
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      className="field flex-1 text-xs"
+                      placeholder={t.addClassificationPlaceholder}
+                      value={newClassName}
+                      onChange={(e) => setNewClassName(e.target.value)}
+                      maxLength={160}
+                      required
+                    />
+                    <button type="submit" disabled={taxBusy} className="btn btn-primary text-xs px-4">
+                      {t.addItemButton}
+                    </button>
+                  </form>
+                  {taxonomy.classifications.length === 0 ? (
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      {t.noTaxonomyItems}
+                      {categories.length > 0 ? ` (${categories.join(' · ')})` : ''}
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-48 overflow-y-auto rounded-lg border border-slate-200/70 dark:border-slate-800 px-3">
+                      {taxonomy.classifications.map((item) => (
+                        <div key={item.id} className="py-2 flex items-center justify-between gap-2 text-xs">
+                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {item.name}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={taxBusy}
+                            onClick={async () => {
+                              setTaxBusy(true);
+                              try {
+                                await onDeleteTaxonomyItem(item.id);
+                              } finally {
+                                setTaxBusy(false);
+                              }
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            aria-label={t.deleteAction}
+                          >
+                            <AppIcon name="trash" size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </section>
             </div>
@@ -1507,11 +1698,42 @@ export default function SettingsView({
 
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
               {t.roleLabel}
-              <select className="field mt-1" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
+              <select
+                className="field mt-1"
+                value={editRole}
+                onChange={(e) => {
+                  const nextRole = e.target.value;
+                  setEditRole(nextRole);
+                  if (nextRole === 'admin') setEditCanPrint(true);
+                }}
+              >
                 <option value="archiver">{t.roleArchiver}</option>
                 <option value="viewer">{t.roleViewer}</option>
                 <option value="admin">{t.roleAdmin}</option>
               </select>
+            </label>
+
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 cursor-pointer">
+              <div className="min-w-0">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                  <AppIcon name="printer" size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span>{t.printPermissionLabel}</span>
+                </span>
+                <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {editRole === 'admin'
+                    ? t.printAdminAlways
+                    : editCanPrint
+                    ? t.printAllowed
+                    : t.printRestricted}
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={editRole === 'admin' ? true : editCanPrint}
+                disabled={editRole === 'admin'}
+                onChange={(e) => setEditCanPrint(e.target.checked)}
+                className="w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+              />
             </label>
 
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">

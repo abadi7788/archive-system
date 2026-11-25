@@ -16,6 +16,7 @@ from app.api.deps import current_user
 from app.api.documents import build_folder_breadcrumbs, format_document_path
 from app.db import get_db
 from app.models.document import Document
+from app.models.taxonomy import DocumentStar
 from app.models.user import User, UserRole
 
 router = APIRouter()
@@ -58,6 +59,8 @@ async def search_documents(
     classification: str | None = None,
     folder_id: UUID | None = None,
     owner_id: UUID | None = None,
+    starred_only: bool = False,
+    recent_only: bool = False,
     keyword: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
@@ -65,6 +68,14 @@ async def search_documents(
 ):
     vis_clause = await build_document_visibility_clause(user, db)
     query = select(Document).where(vis_clause)
+
+    starred_ids = set(
+        (await db.scalars(select(DocumentStar.document_id).where(DocumentStar.user_id == user.id))).all()
+    )
+    if starred_only:
+        if not starred_ids:
+            return []
+        query = query.where(Document.id.in_(starred_ids))
 
     if owner_id:
         visible_owners = await get_visible_owner_ids(user, db)
@@ -146,12 +157,14 @@ async def search_documents(
                     "owner_username": owner_info["username"] if owner_info else None,
                     "owner_job_title": owner_info["job_title"] if owner_info else None,
                     "can_manage": can_manage,
+                    "is_starred": d.id in starred_ids,
                     "created_at": d.created_at,
                 }
             )
         return results
 
-    rows = (await db.scalars(query.order_by(Document.created_at.desc()).limit(limit))).all()
+    effective_limit = min(limit, 50) if recent_only else limit
+    rows = (await db.scalars(query.order_by(Document.created_at.desc()).limit(effective_limit))).all()
     owner_map = await build_user_display_map(db, {d.user_id for d in rows})
     results = []
     for d in rows:
@@ -178,6 +191,7 @@ async def search_documents(
                 "owner_username": owner_info["username"] if owner_info else None,
                 "owner_job_title": owner_info["job_title"] if owner_info else None,
                 "can_manage": can_manage,
+                "is_starred": d.id in starred_ids,
                 "created_at": d.created_at,
             }
         )

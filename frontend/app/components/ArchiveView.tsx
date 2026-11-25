@@ -1,10 +1,12 @@
 'use client';
-import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import { statusDisplayMeta, type TranslationKeys } from '../lib/i18n';
 import DocumentInspector, { renderHighlightedText } from './DocumentInspector';
 import {
   ArchiveFilters,
+  ArchiveScope,
+  BulkUploadTask,
   DocItem,
   FolderItem,
   OwnerSummary,
@@ -13,9 +15,13 @@ import {
   formatDateISO,
 } from './types';
 
+export const DRAG_DOC_IDS_MIME = 'application/x-archive-doc-ids';
+
 export default function ArchiveView({
   user,
   token,
+  canPrint,
+  archiveScope,
   folders,
   docs,
   visibleOwners,
@@ -26,6 +32,7 @@ export default function ArchiveView({
   filters,
   busy,
   loadingFolders,
+  bulkUploadTasks,
   t,
   dir,
   onQueryChange,
@@ -36,14 +43,22 @@ export default function ArchiveView({
   onCreateFolder,
   onDeleteFolder,
   onPreviewDoc,
+  onPrintDoc,
+  onToggleStar,
   onEditDoc,
   onDownloadDoc,
   onDeleteDoc,
-  onExport,
+  onMoveDocsToFolder,
+  onBulkTrashDocs,
+  onBulkDownloadZip,
+  onBulkUploadFiles,
+  onDismissUploadTray,
   onGoUpload,
 }: {
   user: User;
   token: string;
+  canPrint: boolean;
+  archiveScope: ArchiveScope;
   folders: FolderItem[];
   docs: DocItem[];
   visibleOwners: OwnerSummary[];
@@ -54,6 +69,7 @@ export default function ArchiveView({
   filters: ArchiveFilters;
   busy: boolean;
   loadingFolders: boolean;
+  bulkUploadTasks: BulkUploadTask[];
   t: TranslationKeys;
   dir: 'rtl' | 'ltr';
   onQueryChange: (val: string) => void;
@@ -64,12 +80,19 @@ export default function ArchiveView({
   onCreateFolder: (name: string, parentId: string | null) => Promise<void>;
   onDeleteFolder: (folder: FolderItem) => Promise<void>;
   onPreviewDoc: (doc: DocItem) => void;
+  onPrintDoc: (doc: DocItem) => void;
+  onToggleStar: (doc: DocItem) => void;
   onEditDoc: (doc: DocItem) => void;
   onDownloadDoc: (doc: DocItem) => void;
   onDeleteDoc: (doc: DocItem) => Promise<void>;
-  onExport: (kind: 'xlsx' | 'pdf') => void;
+  onMoveDocsToFolder: (docIds: string[], targetFolderId: string | null) => Promise<void>;
+  onBulkTrashDocs: (docIds: string[]) => Promise<void>;
+  onBulkDownloadZip: (docIds: string[]) => Promise<void>;
+  onBulkUploadFiles: (files: File[], targetFolderId: string | null) => Promise<void>;
+  onDismissUploadTray: () => void;
   onGoUpload: () => void;
 }) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -79,6 +102,18 @@ export default function ArchiveView({
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
+  // Multi-select checkboxes for Bulk Actions
+  const [checkedDocIds, setCheckedDocIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
+  const [bulkTargetFolderId, setBulkTargetFolderId] = useState<string>('');
+  const [showBulkTrashModal, setShowBulkTrashModal] = useState(false);
+
+  // Drag & Drop (OS files upload + Drag-to-Folder move)
+  const [draggingExternalFiles, setDraggingExternalFiles] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const dragDepthRef = useRef(0);
+
   // Soft-delete modals
   const [docToTrash, setDocToTrash] = useState<DocItem | null>(null);
   const [folderToTrash, setFolderToTrash] = useState<FolderItem | null>(null);
@@ -86,18 +121,57 @@ export default function ArchiveView({
 
   const canCreate = user.role !== 'viewer';
   const showOwnerColumn = user.role === 'admin' || visibleOwners.length > 1;
+  const writableFolders = useMemo(
+    () => folders.filter((f) => f.can_manage !== false),
+    [folders]
+  );
 
-  // Keep selectedDoc synced with visible docs list
+  // Keep selectedDoc and checkedDocIds synced with visible docs list
   useEffect(() => {
+    const visibleIds = new Set(docs.map((d) => d.id));
+    setCheckedDocIds((prev) => prev.filter((id) => visibleIds.has(id)));
     if (!docs.length) {
       setSelectedDocId(null);
       setMobileInspectorOpen(false);
       return;
     }
     setSelectedDocId((prev) => {
-      if (prev && docs.some((d) => d.id === prev)) return prev;
+      if (prev && visibleIds.has(prev)) return prev;
       return docs[0].id;
     });
+  }, [docs]);
+
+  // Keyboard shortcuts: Ctrl+K / Cmd+K focuses search; ArrowUp / ArrowDown navigates document rows
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase() || '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+        return;
+      }
+      if (!docs.length) return;
+      e.preventDefault();
+      setSelectedDocId((prev) => {
+        const currentIdx = prev ? docs.findIndex((d) => d.id === prev) : -1;
+        if (e.key === 'ArrowDown') {
+          const nextIdx = currentIdx < docs.length - 1 ? currentIdx + 1 : 0;
+          return docs[nextIdx].id;
+        }
+        const prevIdx = currentIdx > 0 ? currentIdx - 1 : docs.length - 1;
+        return docs[prevIdx].id;
+      });
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [docs]);
 
   const selectedDoc = useMemo(
@@ -139,22 +213,42 @@ export default function ArchiveView({
 
   const hasActiveSearch = Boolean(query.trim()) || activeFiltersCount > 0;
 
-  // Subfolders visible at current folder level (hidden during active text search to prioritize matched documents)
+  // Subfolders visible at current folder level (only in 'all' archive scope without active search)
   const childFolders = useMemo(() => {
-    if (hasActiveSearch) return [];
+    if (archiveScope !== 'all' || hasActiveSearch) return [];
     const parentTarget = selectedFolder || null;
     return folders.filter((f) => (f.parent_id || null) === parentTarget);
-  }, [folders, selectedFolder, hasActiveSearch]);
+  }, [archiveScope, folders, selectedFolder, hasActiveSearch]);
 
-  // Linked employees count for KPI card
   const linkedEmployeesCount = useMemo(() => {
     if (user.role === 'admin') {
       return visibleOwners.length;
     }
-    // For employees, show number of linked teammates (excluding self if listed, or total shared members)
-    const others = visibleOwners.filter((o) => o.id !== user.id).length;
-    return others;
+    return visibleOwners.filter((o) => o.id !== user.id).length;
   }, [visibleOwners, user.id, user.role]);
+
+  const allDocsChecked = docs.length > 0 && checkedDocIds.length === docs.length;
+  const manageableCheckedIds = useMemo(() => {
+    if (!checkedDocIds.length || user.role === 'viewer') return [];
+    const checkedSet = new Set(checkedDocIds);
+    return docs
+      .filter((d) => checkedSet.has(d.id) && d.can_manage !== false)
+      .map((d) => d.id);
+  }, [checkedDocIds, docs, user.role]);
+
+  function toggleCheckDoc(docId: string) {
+    setCheckedDocIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+    );
+  }
+
+  function toggleCheckAll() {
+    if (allDocsChecked) {
+      setCheckedDocIds([]);
+    } else {
+      setCheckedDocIds(docs.map((d) => d.id));
+    }
+  }
 
   function handleSearchSubmit(e: FormEvent) {
     e.preventDefault();
@@ -190,6 +284,41 @@ export default function ArchiveView({
     }
   }
 
+  async function handleConfirmBulkMove(e: FormEvent) {
+    e.preventDefault();
+    if (!manageableCheckedIds.length) return;
+    setBulkBusy(true);
+    try {
+      await onMoveDocsToFolder(manageableCheckedIds, bulkTargetFolderId || null);
+      setShowBulkMoveModal(false);
+      setCheckedDocIds([]);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleConfirmBulkTrash() {
+    if (!manageableCheckedIds.length) return;
+    setBulkBusy(true);
+    try {
+      await onBulkTrashDocs(manageableCheckedIds);
+      setShowBulkTrashModal(false);
+      setCheckedDocIds([]);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkZipClick() {
+    if (!checkedDocIds.length) return;
+    setBulkBusy(true);
+    try {
+      await onBulkDownloadZip(checkedDocIds);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function handleSelectRow(doc: DocItem) {
     setSelectedDocId(doc.id);
     if (typeof window !== 'undefined' && window.innerWidth < 1280) {
@@ -197,12 +326,112 @@ export default function ArchiveView({
     }
   }
 
+  // Workspace-level drag & drop for OS files
+  function isExternalFileDrag(e: React.DragEvent): boolean {
+    const types = Array.from(e.dataTransfer?.types || []);
+    return types.includes('Files') && !types.includes(DRAG_DOC_IDS_MIME);
+  }
+
+  function handleWorkspaceDragEnter(e: React.DragEvent) {
+    if (!canCreate || !isExternalFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setDraggingExternalFiles(true);
+  }
+
+  function handleWorkspaceDragOver(e: React.DragEvent) {
+    if (!canCreate || !isExternalFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  function handleWorkspaceDragLeave(e: React.DragEvent) {
+    if (!canCreate || !isExternalFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setDraggingExternalFiles(false);
+    }
+  }
+
+  async function handleWorkspaceDrop(e: React.DragEvent) {
+    if (!canCreate) return;
+    if (e.dataTransfer.types.includes(DRAG_DOC_IDS_MIME)) {
+      setDraggingExternalFiles(false);
+      dragDepthRef.current = 0;
+      return;
+    }
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setDraggingExternalFiles(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) {
+      await onBulkUploadFiles(files, selectedFolder || null);
+    }
+  }
+
+  // Folder row drop target (accepts BOTH dragged archive documents AND external OS files)
+  async function handleFolderRowDrop(e: React.DragEvent, folder: FolderItem) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+    setDraggingExternalFiles(false);
+    dragDepthRef.current = 0;
+
+    if (!canCreate || folder.can_manage === false) return;
+
+    const rawDocIds = e.dataTransfer.getData(DRAG_DOC_IDS_MIME);
+    if (rawDocIds) {
+      try {
+        const ids: string[] = JSON.parse(rawDocIds);
+        if (Array.isArray(ids) && ids.length > 0) {
+          await onMoveDocsToFolder(ids, folder.id);
+          setCheckedDocIds((prev) => prev.filter((id) => !ids.includes(id)));
+        }
+      } catch {
+        // ignore invalid drag payload
+      }
+      return;
+    }
+
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) {
+      await onBulkUploadFiles(files, folder.id);
+    }
+  }
+
   const canManageSelected = Boolean(
     selectedDoc && selectedDoc.can_manage !== false && user.role !== 'viewer'
   );
 
+  const tableColCount = (showOwnerColumn ? 7 : 6);
+  const hasActiveUploads = bulkUploadTasks.some((task) => task.status === 'uploading');
+
   return (
-    <div className="w-full max-w-[1680px] mx-auto">
+    <div
+      className="relative w-full max-w-[1680px] mx-auto"
+      onDragEnter={handleWorkspaceDragEnter}
+      onDragOver={handleWorkspaceDragOver}
+      onDragLeave={handleWorkspaceDragLeave}
+      onDrop={handleWorkspaceDrop}
+    >
+      {/* Full-area Drag & Drop OS File Upload Overlay */}
+      {draggingExternalFiles && canCreate && (
+        <div className="pointer-events-none fixed inset-0 z-40 bg-blue-600/12 dark:bg-blue-500/15 backdrop-blur-[2px] flex items-center justify-center p-6">
+          <div className="rounded-2xl border-2 border-dashed border-blue-600 dark:border-blue-400 bg-white/95 dark:bg-slate-900/95 px-8 py-7 text-center shadow-2xl max-w-md">
+            <div className="mx-auto w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 grid place-items-center mb-3">
+              <AppIcon name="upload" size={24} />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t.dropFilesHereTitle}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              {t.dropFilesHereDesc}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* 2-Column Inner Split (Center Workspace + Opposite Live Document Inspector = 3 Panes total with Sidebar) */}
       <div className="flex flex-col xl:flex-row items-start gap-4 lg:gap-5">
         {/* =============================================================== */}
@@ -211,20 +440,24 @@ export default function ArchiveView({
         <div className="flex-1 min-w-0 w-full space-y-4">
           {/* 1. Unified Compact Top Toolbar */}
           <section className="card p-3.5 sm:p-4 space-y-3">
-            <form onSubmit={handleSearchSubmit} className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
-              {/* Search Bar */}
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5"
+            >
+              {/* Search Bar (Ctrl+K shortcut) */}
               <div className="relative flex-1 min-w-0">
                 <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                   <AppIcon name="search" size={16} />
                 </span>
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
                   placeholder={t.searchPlaceholder}
-                  className="field field-icon-start pe-9 text-xs sm:text-sm"
+                  className="field field-icon-start pe-14 text-xs sm:text-sm"
                 />
-                {query && (
+                {query ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -236,6 +469,13 @@ export default function ArchiveView({
                   >
                     <AppIcon name="x" size={14} />
                   </button>
+                ) : (
+                  <kbd
+                    dir="ltr"
+                    className="hidden sm:inline-flex pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 items-center px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[10px] font-semibold text-slate-400 dark:text-slate-500"
+                  >
+                    Ctrl+K
+                  </kbd>
                 )}
               </div>
 
@@ -271,7 +511,7 @@ export default function ArchiveView({
                   )}
                 </button>
 
-                {canCreate && (
+                {canCreate && archiveScope === 'all' && (
                   <button
                     type="button"
                     onClick={() => setShowNewFolder((v) => !v)}
@@ -461,7 +701,7 @@ export default function ArchiveView({
             )}
 
             {/* Inline New Folder Creator */}
-            {showNewFolder && canCreate && (
+            {showNewFolder && canCreate && archiveScope === 'all' && (
               <form
                 onSubmit={handleCreateFolderSubmit}
                 className="pt-3 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
@@ -509,9 +749,67 @@ export default function ArchiveView({
             )}
           </section>
 
+          {/* Live Bulk Drag & Drop Upload Progress Tray */}
+          {bulkUploadTasks.length > 0 && (
+            <section className="card p-3.5 space-y-2.5 border-blue-200/90 dark:border-blue-800/70">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100">
+                  <AppIcon name="upload" size={15} className="text-blue-600 dark:text-blue-400" />
+                  <span>
+                    {t.uploadingFilesTitle} ({bulkUploadTasks.length})
+                  </span>
+                </div>
+                {!hasActiveUploads && (
+                  <button
+                    type="button"
+                    onClick={onDismissUploadTray}
+                    aria-label={t.close}
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  >
+                    <AppIcon name="x" size={14} />
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {bulkUploadTasks.map((task) => (
+                  <div key={task.id} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-medium text-slate-700 dark:text-slate-200">
+                        {task.fileName}
+                      </span>
+                      <span
+                        dir="ltr"
+                        className={`tabular-nums shrink-0 font-semibold ${
+                          task.status === 'error'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : task.status === 'done'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-blue-600 dark:text-blue-400'
+                        }`}
+                      >
+                        {task.status === 'error' ? task.error || 'Error' : `${task.progress}%`}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-150 ${
+                          task.status === 'error'
+                            ? 'bg-rose-500'
+                            : task.status === 'done'
+                            ? 'bg-emerald-500'
+                            : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${Math.max(4, Math.min(100, task.progress))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* 2. Compact 3-Card Quick KPI Strip */}
           <section aria-label="Archive Summary" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* KPI 1: Documents */}
             <div className="card px-4 py-3.5 flex items-center gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 grid place-items-center shrink-0">
                 <AppIcon name="file" size={19} />
@@ -529,7 +827,6 @@ export default function ArchiveView({
               </div>
             </div>
 
-            {/* KPI 2: Folders */}
             <div className="card px-4 py-3.5 flex items-center gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 grid place-items-center shrink-0">
                 <AppIcon name="folder" size={19} />
@@ -547,7 +844,6 @@ export default function ArchiveView({
               </div>
             </div>
 
-            {/* KPI 3: Linked Employees */}
             <div className="card px-4 py-3.5 flex items-center gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 grid place-items-center shrink-0">
                 <AppIcon name="users" size={19} />
@@ -566,91 +862,156 @@ export default function ArchiveView({
             </div>
           </section>
 
-          {/* 3. Elevated White Files & Folders Table */}
+          {/* 3. Elevated White Files & Folders Table (ZERO PDF/Excel export buttons) */}
           <section className="card overflow-hidden">
-            {/* Table Top Header: Breadcrumbs + Export Controls */}
-            <div className="px-4 py-3 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5 bg-slate-50/60 dark:bg-slate-900/60">
-              <nav aria-label="Breadcrumb" className="flex items-center flex-wrap gap-1 text-xs min-w-0">
-                <button
-                  type="button"
-                  onClick={() => onSelectFolder('')}
-                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${
-                    !selectedFolder
-                      ? 'font-bold text-blue-700 dark:text-blue-400 bg-blue-50/90 dark:bg-blue-950/50'
-                      : 'font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <AppIcon name="archive" size={13} />
-                  <span>{t.rootHome}</span>
-                </button>
-                {breadcrumbChain.map((crumb, idx) => {
-                  const isLast = idx === breadcrumbChain.length - 1;
-                  return (
-                    <React.Fragment key={crumb.id}>
-                      <span className="text-slate-400 dark:text-slate-600" aria-hidden="true">
-                        /
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onSelectFolder(crumb.id)}
-                        className={`px-2 py-1 rounded-md transition-colors truncate max-w-[180px] ${
-                          isLast
-                            ? 'font-bold text-blue-700 dark:text-blue-400 bg-blue-50/90 dark:bg-blue-950/50'
-                            : 'font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        {crumb.name}
-                      </button>
-                    </React.Fragment>
-                  );
-                })}
-                {hasActiveSearch && (
+            {/* Table Top Header: Breadcrumbs OR Bulk Selection Action Bar */}
+            {checkedDocIds.length > 0 ? (
+              <div className="px-4 py-2.5 border-b border-blue-200 dark:border-blue-800/80 bg-blue-50/90 dark:bg-blue-950/40 flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-blue-800 dark:text-blue-200">
+                  <span
+                    dir="ltr"
+                    className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-md bg-blue-600 text-white text-[11px] tabular-nums"
+                  >
+                    {checkedDocIds.length}
+                  </span>
+                  <span>{t.bulkSelectedLabel}</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {manageableCheckedIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={bulkBusy}
+                      onClick={() => {
+                        setBulkTargetFolderId(selectedFolder || '');
+                        setShowBulkMoveModal(true);
+                      }}
+                      className="btn btn-muted py-1.5 px-2.5 text-xs"
+                    >
+                      <AppIcon name="folderMove" size={14} />
+                      <span>{t.bulkMoveToFolder}</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
-                    onClick={onResetSearch}
-                    className="ms-2 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    disabled={bulkBusy}
+                    onClick={handleBulkZipClick}
+                    className="btn btn-muted py-1.5 px-2.5 text-xs"
                   >
-                    {t.clear}
+                    <AppIcon name="zip" size={14} />
+                    <span>{t.bulkDownloadZip}</span>
                   </button>
-                )}
-              </nav>
 
-              {/* Export Buttons */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onExport('xlsx')}
-                  disabled={!docs.length}
-                  className="btn btn-muted py-1.5 px-2.5 text-[11px]"
-                >
-                  <AppIcon name="download" size={13} />
-                  <span>{t.exportExcel}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onExport('pdf')}
-                  disabled={!docs.length}
-                  className="btn btn-muted py-1.5 px-2.5 text-[11px]"
-                >
-                  <AppIcon name="download" size={13} />
-                  <span>{t.exportPdf}</span>
-                </button>
+                  {manageableCheckedIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={bulkBusy}
+                      onClick={() => setShowBulkTrashModal(true)}
+                      className="btn py-1.5 px-2.5 text-xs border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100"
+                    >
+                      <AppIcon name="trash" size={14} />
+                      <span>{t.bulkDeleteSelected}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setCheckedDocIds([])}
+                    className="btn btn-muted py-1.5 px-2.5 text-xs"
+                  >
+                    {t.bulkClearSelection}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="px-4 py-3 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5 bg-slate-50/60 dark:bg-slate-900/60">
+                <nav aria-label="Breadcrumb" className="flex items-center flex-wrap gap-1 text-xs min-w-0">
+                  {archiveScope === 'recent' ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-blue-700 dark:text-blue-400 bg-blue-50/90 dark:bg-blue-950/50">
+                      <AppIcon name="clock" size={13} />
+                      <span>{t.navRecent}</span>
+                    </span>
+                  ) : archiveScope === 'starred' ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-amber-700 dark:text-amber-300 bg-amber-50/90 dark:bg-amber-950/40">
+                      <AppIcon name="starFilled" size={13} />
+                      <span>{t.navStarred}</span>
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onSelectFolder('')}
+                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${
+                          !selectedFolder
+                            ? 'font-bold text-blue-700 dark:text-blue-400 bg-blue-50/90 dark:bg-blue-950/50'
+                            : 'font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <AppIcon name="archive" size={13} />
+                        <span>{t.rootHome}</span>
+                      </button>
+                      {breadcrumbChain.map((crumb, idx) => {
+                        const isLast = idx === breadcrumbChain.length - 1;
+                        return (
+                          <React.Fragment key={crumb.id}>
+                            <span className="text-slate-400 dark:text-slate-600" aria-hidden="true">
+                              /
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onSelectFolder(crumb.id)}
+                              className={`px-2 py-1 rounded-md transition-colors truncate max-w-[180px] ${
+                                isLast
+                                  ? 'font-bold text-blue-700 dark:text-blue-400 bg-blue-50/90 dark:bg-blue-950/50'
+                                  : 'font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              {crumb.name}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                    </>
+                  )}
+                  {hasActiveSearch && (
+                    <button
+                      type="button"
+                      onClick={onResetSearch}
+                      className="ms-2 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {t.clear}
+                    </button>
+                  )}
+                </nav>
+              </div>
+            )}
 
             {/* Table Body */}
             <div className="overflow-x-auto">
               <table className="w-full text-start border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900">
-                    <th className="py-2.5 px-4 text-start">{t.fileNameLabel}</th>
+                    <th className="py-2.5 ps-4 pe-1 w-9 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allDocsChecked}
+                        disabled={docs.length === 0}
+                        onChange={toggleCheckAll}
+                        aria-label={t.selectAllFiles}
+                        className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer align-middle"
+                      />
+                    </th>
+                    <th className="py-2.5 px-3 text-start">{t.fileNameLabel}</th>
                     <th className="py-2.5 px-3 text-start hidden md:table-cell">{t.departmentLabel}</th>
                     {showOwnerColumn && (
                       <th className="py-2.5 px-3 text-start hidden sm:table-cell">{t.ownerLabel}</th>
                     )}
-                    <th className="py-2.5 px-3 text-start hidden sm:table-cell whitespace-nowrap">{t.dateLabel}</th>
+                    <th className="py-2.5 px-3 text-start hidden sm:table-cell whitespace-nowrap">
+                      {t.dateLabel}
+                    </th>
                     <th className="py-2.5 px-3 text-end whitespace-nowrap">{t.sizeLabel}</th>
-                    <th className="py-2.5 px-3 text-end w-10" aria-label="Actions" />
+                    <th className="py-2.5 px-3 text-end w-24" aria-label="Actions" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-xs sm:text-sm">
@@ -659,7 +1020,10 @@ export default function ArchiveView({
                     <>
                       {[1, 2, 3, 4, 5].map((i) => (
                         <tr key={`sk-${i}`} className="animate-pulse">
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 ps-4 pe-1">
+                            <div className="w-3.5 h-3.5 rounded bg-slate-200/80 dark:bg-slate-800 mx-auto" />
+                          </td>
+                          <td className="py-3.5 px-3">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-lg bg-slate-200/80 dark:bg-slate-800 shrink-0" />
                               <div className="space-y-1.5 flex-1">
@@ -688,19 +1052,37 @@ export default function ArchiveView({
                     </>
                   )}
 
-                  {/* Subfolder Rows */}
+                  {/* Subfolder Rows (Drop Targets for Drag-to-Folder Move & Direct Upload) */}
                   {childFolders.map((folder) => {
                     const canManageFolder = folder.can_manage !== false && user.role !== 'viewer';
+                    const isDropTarget = dragOverFolderId === folder.id;
                     return (
                       <tr
                         key={`folder-${folder.id}`}
                         onClick={() => onSelectFolder(folder.id)}
-                        className="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                        onDragOver={(e) => {
+                          if (!canManageFolder) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDragOverFolderId(folder.id);
+                        }}
+                        onDragLeave={(e) => {
+                          e.stopPropagation();
+                          if (dragOverFolderId === folder.id) setDragOverFolderId(null);
+                        }}
+                        onDrop={(e) => handleFolderRowDrop(e, folder)}
+                        title={canManageFolder ? t.dropOntoFolderHint : undefined}
+                        className={`group cursor-pointer transition-colors ${
+                          isDropTarget
+                            ? 'bg-blue-50 dark:bg-blue-950/60 ring-2 ring-inset ring-blue-500'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                        }`}
                       >
-                        <td className="py-3 px-4">
+                        <td className="py-3 ps-4 pe-1 text-center" />
+                        <td className="py-3 px-3">
                           <div className="flex items-center gap-3 min-w-0">
                             <span className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 grid place-items-center shrink-0">
-                              <AppIcon name="folder" size={17} />
+                              <AppIcon name={isDropTarget ? 'folderOpen' : 'folder'} size={17} />
                             </span>
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
@@ -759,9 +1141,10 @@ export default function ArchiveView({
                     );
                   })}
 
-                  {/* Document Rows */}
+                  {/* Document Rows (Draggable to Folders + Multi-select + Star + Optional Print) */}
                   {docs.map((doc) => {
                     const isSelected = doc.id === selectedDocId;
+                    const isChecked = checkedDocIds.includes(doc.id);
                     const isImg = (doc.mime_type || '').toLowerCase().startsWith('image/');
                     const isPdf = (doc.mime_type || '').toLowerCase() === 'application/pdf';
                     const statusMeta = statusDisplayMeta(doc.status, t);
@@ -773,16 +1156,41 @@ export default function ArchiveView({
                     return (
                       <tr
                         key={doc.id}
+                        draggable={canManageDoc}
+                        onDragStart={(e) => {
+                          if (!canManageDoc) return;
+                          const idsToDrag =
+                            isChecked && manageableCheckedIds.length > 0
+                              ? manageableCheckedIds
+                              : [doc.id];
+                          e.dataTransfer.setData(DRAG_DOC_IDS_MIME, JSON.stringify(idsToDrag));
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
                         onClick={() => handleSelectRow(doc)}
                         onDoubleClick={() => onPreviewDoc(doc)}
                         aria-selected={isSelected}
                         className={`group cursor-pointer transition-colors ${
                           isSelected
                             ? 'bg-blue-50/90 dark:bg-blue-950/40'
+                            : isChecked
+                            ? 'bg-blue-50/45 dark:bg-blue-950/25'
                             : 'hover:bg-slate-50/90 dark:hover:bg-slate-800/45'
                         }`}
                       >
-                        <td className="py-3 px-4">
+                        <td
+                          className="py-3 ps-4 pe-1 text-center align-top"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleCheckDoc(doc.id)}
+                            aria-label={doc.file_name}
+                            className="mt-1.5 w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
+                          />
+                        </td>
+
+                        <td className="py-3 px-3">
                           <div className="flex items-start gap-3 min-w-0">
                             <span
                               className={`mt-0.5 w-8 h-8 rounded-lg grid place-items-center shrink-0 ${
@@ -808,7 +1216,6 @@ export default function ArchiveView({
                                 {doc.file_name}
                               </div>
 
-                              {/* Clean unboxed secondary metadata line */}
                               <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                                 {doc.folder_breadcrumb && (
                                   <>
@@ -821,7 +1228,6 @@ export default function ArchiveView({
                                 <span className={statusMeta.textClass}>{statusMeta.label}</span>
                               </div>
 
-                              {/* Highlighted Search Content Snippet right below filename */}
                               {snippetText && (
                                 <p
                                   className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2"
@@ -869,6 +1275,38 @@ export default function ArchiveView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                onToggleStar(doc);
+                              }}
+                              title={doc.is_starred ? t.removeFromStarred : t.addToStarred}
+                              aria-label={doc.is_starred ? t.removeFromStarred : t.addToStarred}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                doc.is_starred
+                                  ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/50'
+                                  : 'text-slate-300 dark:text-slate-600 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={14} />
+                            </button>
+
+                            {canPrint && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onPrintDoc(doc);
+                                }}
+                                title={t.print}
+                                aria-label={t.print}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors"
+                              >
+                                <AppIcon name="printer" size={14} />
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 onPreviewDoc(doc);
                               }}
                               title={t.preview}
@@ -877,6 +1315,7 @@ export default function ArchiveView({
                             >
                               <AppIcon name="eye" size={14} />
                             </button>
+
                             {canManageDoc && (
                               <button
                                 type="button"
@@ -900,9 +1339,18 @@ export default function ArchiveView({
                   {/* Empty State */}
                   {!busy && !loadingFolders && !childFolders.length && !docs.length && (
                     <tr>
-                      <td colSpan={showOwnerColumn ? 6 : 5} className="py-14 px-6 text-center">
+                      <td colSpan={tableColCount} className="py-14 px-6 text-center">
                         <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 grid place-items-center mx-auto mb-3">
-                          <AppIcon name="archive" size={22} />
+                          <AppIcon
+                            name={
+                              archiveScope === 'starred'
+                                ? 'star'
+                                : archiveScope === 'recent'
+                                ? 'clock'
+                                : 'archive'
+                            }
+                            size={22}
+                          />
                         </div>
                         <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                           {t.emptyArchiveTitle}
@@ -942,9 +1390,12 @@ export default function ArchiveView({
             token={token}
             query={query}
             canManage={canManageSelected}
+            canPrint={canPrint}
             t={t}
             dir={dir}
             onOpenFullPreview={onPreviewDoc}
+            onPrintDoc={onPrintDoc}
+            onToggleStar={onToggleStar}
             onDownload={onDownloadDoc}
             onEdit={onEditDoc}
             onRequestDelete={(doc) => setDocToTrash(doc)}
@@ -966,12 +1417,15 @@ export default function ArchiveView({
               token={token}
               query={query}
               canManage={canManageSelected}
+              canPrint={canPrint}
               t={t}
               dir={dir}
               onOpenFullPreview={(doc) => {
                 setMobileInspectorOpen(false);
                 onPreviewDoc(doc);
               }}
+              onPrintDoc={onPrintDoc}
+              onToggleStar={onToggleStar}
               onDownload={onDownloadDoc}
               onEdit={(doc) => {
                 setMobileInspectorOpen(false);
@@ -984,7 +1438,111 @@ export default function ArchiveView({
         </div>
       )}
 
-      {/* Soft Delete Confirmation Modal (Files & Folders -> Recycle Bin) */}
+      {/* Bulk Move to Folder Modal */}
+      {showBulkMoveModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          dir={dir}
+          className="fixed inset-0 z-[88] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !bulkBusy) setShowBulkMoveModal(false);
+          }}
+        >
+          <form onSubmit={handleConfirmBulkMove} className="card w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t.bulkMoveModalTitle} ({manageableCheckedIds.length})
+              </h3>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => setShowBulkMoveModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <AppIcon name="x" size={16} />
+              </button>
+            </div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {t.targetFolderLabel}
+              <select
+                className="field mt-1.5"
+                value={bulkTargetFolderId}
+                onChange={(e) => setBulkTargetFolderId(e.target.value)}
+              >
+                <option value="">{t.noFolderRoot}</option>
+                {writableFolders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.path && f.path !== '/' ? `${f.path}/${f.name}` : f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => setShowBulkMoveModal(false)}
+                className="btn btn-muted text-xs"
+              >
+                {t.cancel}
+              </button>
+              <button type="submit" disabled={bulkBusy} className="btn btn-primary text-xs px-5">
+                {bulkBusy ? t.saving : t.bulkMoveConfirm}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Bulk Trash Confirmation Modal */}
+      {showBulkTrashModal && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          dir={dir}
+          className="fixed inset-0 z-[88] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !bulkBusy) setShowBulkTrashModal(false);
+          }}
+        >
+          <div className="card w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 grid place-items-center shrink-0">
+                <AppIcon name="trash" size={19} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {t.bulkTrashModalTitle} ({manageableCheckedIds.length})
+                </h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {t.bulkTrashModalDesc}
+                </p>
+              </div>
+            </div>
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => setShowBulkTrashModal(false)}
+                className="btn btn-muted text-xs"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={handleConfirmBulkTrash}
+                className="btn btn-danger text-xs px-4"
+              >
+                {bulkBusy ? t.movingToTrash : t.moveToTrashConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Soft Delete Confirmation Modal (Single File or Folder -> Recycle Bin) */}
       {(docToTrash || folderToTrash) && (
         <div
           role="alertdialog"
@@ -998,25 +1556,25 @@ export default function ArchiveView({
             }
           }}
         >
-          <div className="card max-w-md w-full p-6 shadow-2xl">
+          <div className="card w-full max-w-md p-6 shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
-              <span className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 grid place-items-center shrink-0">
+              <span className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 grid place-items-center shrink-0">
                 <AppIcon name="trash" size={19} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                   {docToTrash ? t.confirmTrashDocTitle : t.confirmTrashFolderTitle}
                 </h3>
-                <p className="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200 break-words">
-                  {docToTrash ? docToTrash.file_name : folderToTrash?.name}
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                   {docToTrash ? t.confirmTrashDocDesc : t.confirmTrashFolderDesc}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                  {docToTrash ? docToTrash.file_name : folderToTrash?.name}
                 </p>
               </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-end gap-2">
+            <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
                 disabled={trashing}
@@ -1032,7 +1590,7 @@ export default function ArchiveView({
                 type="button"
                 disabled={trashing}
                 onClick={handleConfirmTrash}
-                className="btn btn-danger text-xs"
+                className="btn btn-danger text-xs px-4"
               >
                 {trashing ? t.movingToTrash : t.moveToTrashConfirm}
               </button>

@@ -25,11 +25,18 @@ async def lifespan(_: FastAPI):
         await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_print BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("UPDATE users SET can_print = TRUE WHERE role = 'admin'"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(160)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(160)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_theme VARCHAR(16) NOT NULL DEFAULT 'light'"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+    # Ensure local document storage directory is initialized on startup.
+    from app.services.storage_service import get_storage
+    await get_storage().ping()
     if settings.bootstrap_admin_username and settings.bootstrap_admin_password:
+        from argon2 import PasswordHasher
         from app.core.security import verify_password
         from app.models.audit_log import AuditLog
 
@@ -42,17 +49,15 @@ async def lifespan(_: FastAPI):
                 try:
                     password_hash = hash_password(bootstrap_password)
                 except ValueError:
-                    if settings.environment == "development":
-                        from argon2 import PasswordHasher
-                        password_hash = PasswordHasher().hash(bootstrap_password)
-                    else:
-                        raise
+                    # Allow any bootstrap password from .env on initial creation and force immediate replacement on first login.
+                    password_hash = PasswordHasher().hash(bootstrap_password)
                 session.add(
                     User(
                         username=settings.bootstrap_admin_username,
                         password_hash=password_hash,
                         role=UserRole.ADMIN,
                         must_change_password=True,
+                        can_print=True,
                     )
                 )
                 await session.commit()

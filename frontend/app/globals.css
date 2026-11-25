@@ -241,3 +241,21 @@ textarea:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Enforce admin print restriction if a user triggers browser print manually */
+@media print {
+  html.print-blocked body * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  html.print-blocked body::before {
+    content: "Printing is restricted by system administrator policy.";
+    display: block !important;
+    visibility: visible !important;
+    padding: 3rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0F172A;
+    text-align: center;
+  }
+}

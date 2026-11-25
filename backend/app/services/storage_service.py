@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from pathlib import Path
 from typing import Protocol
@@ -9,6 +10,7 @@ from botocore.config import Config
 from app.core.config import settings
 from app.core.security import _fernet
 
+logger = logging.getLogger(__name__)
 LOCAL_ROOT = Path(os.getenv("LOCAL_STORAGE_ROOT", "/data/archive"))
 ACTIVE_PROVIDER = settings.storage_provider.lower()
 
@@ -30,17 +32,31 @@ class LocalStorage:
         return target
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
-        path = self._path(key)
-        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
-        encrypted = _fernet().encrypt(data)
-        await asyncio.to_thread(path.write_bytes, encrypted)
+        try:
+            await asyncio.to_thread(LOCAL_ROOT.mkdir, parents=True, exist_ok=True)
+            path = self._path(key)
+            await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+            encrypted = _fernet().encrypt(data)
+            await asyncio.to_thread(path.write_bytes, encrypted)
+        except Exception as exc:
+            logger.error("LocalStorage.put failed for key %s: %s (%s)", key, type(exc).__name__, exc)
+            raise
 
     async def get(self, key: str) -> bytes:
-        stored = await asyncio.to_thread(self._path(key).read_bytes)
-        return _fernet().decrypt(stored)
+        try:
+            stored = await asyncio.to_thread(self._path(key).read_bytes)
+            return _fernet().decrypt(stored)
+        except Exception as exc:
+            logger.error("LocalStorage.get failed for key %s: %s (%s)", key, type(exc).__name__, exc)
+            raise
 
     async def ping(self) -> bool:
-        return await asyncio.to_thread(LOCAL_ROOT.mkdir, parents=True, exist_ok=True) is None
+        try:
+            await asyncio.to_thread(LOCAL_ROOT.mkdir, parents=True, exist_ok=True)
+            return True
+        except Exception as exc:
+            logger.error("LocalStorage.ping failed at %s: %s", LOCAL_ROOT, exc)
+            return False
 
     async def delete(self, key: str) -> None:
         path=self._path(key)

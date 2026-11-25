@@ -78,9 +78,12 @@ export default function DocumentInspector({
   token,
   query,
   canManage,
+  canPrint,
   t,
   dir,
   onOpenFullPreview,
+  onPrintDoc,
+  onToggleStar,
   onDownload,
   onEdit,
   onRequestDelete,
@@ -90,9 +93,12 @@ export default function DocumentInspector({
   token: string;
   query: string;
   canManage: boolean;
+  canPrint: boolean;
   t: TranslationKeys;
   dir: 'rtl' | 'ltr';
   onOpenFullPreview: (doc: DocItem) => void;
+  onPrintDoc: (doc: DocItem) => void;
+  onToggleStar: (doc: DocItem) => void;
   onDownload: (doc: DocItem) => void;
   onEdit: (doc: DocItem) => void;
   onRequestDelete: (doc: DocItem) => void;
@@ -126,7 +132,7 @@ export default function DocumentInspector({
     setPreviewFailed(false);
     setBlobUrl('');
 
-    fetch(`${API}/documents/${doc.id}/download?inline=true`, {
+    fetch(`${API}/documents/${doc.id}/file?inline=true`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
       cache: 'no-store',
@@ -199,9 +205,33 @@ export default function DocumentInspector({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
+            onClick={() => onToggleStar(doc)}
+            title={doc.is_starred ? t.removeFromStarred : t.addToStarred}
+            aria-label={doc.is_starred ? t.removeFromStarred : t.addToStarred}
+            className={`p-1.5 rounded-lg transition-colors ${
+              doc.is_starred
+                ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/50'
+                : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500'
+            }`}
+          >
+            <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={15} />
+          </button>
+          {canPrint && (
+            <button
+              type="button"
+              onClick={() => onPrintDoc(doc)}
+              title={t.print}
+              aria-label={t.print}
+              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              <AppIcon name="printer" size={15} />
+            </button>
+          )}
+          <button
+            type="button"
             onClick={() => onOpenFullPreview(doc)}
-            title={t.openFullPreviewPrint}
-            aria-label={t.openFullPreviewPrint}
+            title={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
+            aria-label={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
             className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             <AppIcon name="maximize" size={15} />
@@ -260,7 +290,7 @@ export default function DocumentInspector({
                 <AppIcon name={isImage ? 'image' : 'file'} size={22} />
               </div>
               <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
-                {previewFailed ? t.previewUnavailable : t.openFullPreviewPrint}
+                {previewFailed ? t.previewUnavailable : canPrint ? t.openFullPreviewPrint : t.openFullPreview}
               </p>
             </div>
           )}
@@ -269,7 +299,7 @@ export default function DocumentInspector({
           <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-white">
               <AppIcon name="maximize" size={12} />
-              <span>{t.openFullPreviewPrint}</span>
+              <span>{canPrint ? t.openFullPreviewPrint : t.openFullPreview}</span>
             </span>
           </div>
         </div>
@@ -354,14 +384,27 @@ export default function DocumentInspector({
 
       {/* Quick Direct Actions */}
       <div className="p-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
-        <button
-          type="button"
-          onClick={() => onOpenFullPreview(doc)}
-          className="btn btn-primary w-full py-2.5 text-xs"
-        >
-          <AppIcon name="printer" size={15} />
-          <span>{t.openFullPreviewPrint}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenFullPreview(doc)}
+            className="btn btn-primary flex-1 py-2.5 text-xs"
+          >
+            <AppIcon name="eye" size={15} />
+            <span className="truncate">{t.openFullPreview}</span>
+          </button>
+          {canPrint && (
+            <button
+              type="button"
+              onClick={() => onPrintDoc(doc)}
+              title={t.print}
+              aria-label={t.print}
+              className="btn btn-muted py-2.5 px-3 text-xs shrink-0"
+            >
+              <AppIcon name="printer" size={15} />
+            </button>
+          )}
+        </div>
 
         <div className={`grid gap-2 ${canManage ? 'grid-cols-3' : 'grid-cols-1'}`}>
           <button

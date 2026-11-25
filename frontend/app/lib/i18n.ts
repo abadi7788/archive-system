@@ -316,6 +316,42 @@ export type TranslationKeys = {
   deleteAction: string;
   loadingPreview: string;
   previewUnavailable: string;
+  openFullPreview: string;
+  // Print permissions (Admin-controlled)
+  printPermissionLabel: string;
+  printAllowed: string;
+  printRestricted: string;
+  printAdminAlways: string;
+  // Recent & Starred shortcuts
+  navRecent: string;
+  navStarred: string;
+  addToStarred: string;
+  removeFromStarred: string;
+  // Bulk Drag & Drop Upload + Multi-Select Bulk Actions + Drag-to-Folder
+  dropFilesHereTitle: string;
+  dropFilesHereDesc: string;
+  uploadingFilesTitle: string;
+  bulkSelectedLabel: string;
+  bulkMoveToFolder: string;
+  bulkDownloadZip: string;
+  bulkDeleteSelected: string;
+  bulkClearSelection: string;
+  bulkMoveModalTitle: string;
+  bulkMoveConfirm: string;
+  bulkTrashModalTitle: string;
+  bulkTrashModalDesc: string;
+  movedToFolderSuccess: string;
+  dropOntoFolderHint: string;
+  selectAllFiles: string;
+  // Standardized Taxonomy Management
+  manageDepartmentsTitle: string;
+  manageClassificationsTitle: string;
+  addDepartmentPlaceholder: string;
+  addClassificationPlaceholder: string;
+  addItemButton: string;
+  selectDepartmentPlaceholder: string;
+  selectClassificationPlaceholder: string;
+  noTaxonomyItems: string;
 };
 
 const ar: TranslationKeys = {
@@ -427,7 +463,7 @@ const ar: TranslationKeys = {
   backToArchive: 'العودة إلى الأرشيف',
   fileOrImageLabel: 'الملف أو الصورة',
   dropzoneTitle: 'اسحب الملف وأفلته هنا، أو اضغط للاختيار',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · بحد أقصى 30 MB',
+  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · بحد أقصى 40 MB',
   removeFile: 'إزالة الملف',
   uploadSubmit: 'رفع المستند',
   uploadingProgress: 'جاري الرفع...',
@@ -583,6 +619,38 @@ const ar: TranslationKeys = {
   deleteAction: 'حذف',
   loadingPreview: 'جاري تحميل المعاينة...',
   previewUnavailable: 'اضغط على فتح المعاينة الكاملة لعرض هذا الملف',
+  openFullPreview: 'فتح المعاينة الكاملة',
+  printPermissionLabel: 'صلاحية الطباعة',
+  printAllowed: 'الطباعة مسموحة',
+  printRestricted: 'الطباعة مقيدة',
+  printAdminAlways: 'مفعّلة دائماً للمدير',
+  navRecent: 'الأحدث',
+  navStarred: 'المفضلة',
+  addToStarred: 'إضافة للمفضلة',
+  removeFromStarred: 'إزالة من المفضلة',
+  dropFilesHereTitle: 'أفلت الملفات هنا للرفع المباشر',
+  dropFilesHereDesc: 'يمكنك سحب ملف أو عدة ملفات معاً لرفعها فوراً إلى المجلد الحالي.',
+  uploadingFilesTitle: 'جاري رفع الملفات',
+  bulkSelectedLabel: 'ملفات محددة',
+  bulkMoveToFolder: 'نقل لمجلد',
+  bulkDownloadZip: 'تنزيل ZIP',
+  bulkDeleteSelected: 'نقل للسلة',
+  bulkClearSelection: 'إلغاء التحديد',
+  bulkMoveModalTitle: 'نقل الملفات المحددة إلى مجلد',
+  bulkMoveConfirm: 'نقل الآن',
+  bulkTrashModalTitle: 'نقل الملفات المحددة إلى سلة المحذوفات',
+  bulkTrashModalDesc: 'سيتم نقل جميع الملفات المحددة إلى سلة المحذوفات ويمكن استعادتها لاحقاً.',
+  movedToFolderSuccess: 'تم نقل الملف إلى المجلد بنجاح.',
+  dropOntoFolderHint: 'أفلت هنا لنقل الملف أو الرفع داخل المجلد',
+  selectAllFiles: 'تحديد جميع الملفات',
+  manageDepartmentsTitle: 'الأقسام المعتمدة',
+  manageClassificationsTitle: 'التصنيفات المعتمدة',
+  addDepartmentPlaceholder: 'أدخل اسم القسم الجديد...',
+  addClassificationPlaceholder: 'أدخل اسم التصنيف الجديد...',
+  addItemButton: 'إضافة',
+  selectDepartmentPlaceholder: '— اختر القسم —',
+  selectClassificationPlaceholder: '— اختر التصنيف —',
+  noTaxonomyItems: 'لم تتم إضافة عناصر بعد.',
 };
 
 const en: TranslationKeys = {
@@ -694,7 +762,7 @@ const en: TranslationKeys = {
   backToArchive: 'Back to Archive',
   fileOrImageLabel: 'File or Image',
   dropzoneTitle: 'Drag and drop a file here, or click to browse',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · Max 30 MB',
+  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · Max 40 MB',
   removeFile: 'Remove File',
   uploadSubmit: 'Upload Document',
   uploadingProgress: 'Uploading...',
@@ -850,6 +918,38 @@ const en: TranslationKeys = {
   deleteAction: 'Delete',
   loadingPreview: 'Loading preview...',
   previewUnavailable: 'Click Open Full Preview to view this file',
+  openFullPreview: 'Open Full Preview',
+  printPermissionLabel: 'Print Permission',
+  printAllowed: 'Printing Allowed',
+  printRestricted: 'Printing Restricted',
+  printAdminAlways: 'Always enabled for Admin',
+  navRecent: 'Recent',
+  navStarred: 'Starred',
+  addToStarred: 'Add to Starred',
+  removeFromStarred: 'Remove from Starred',
+  dropFilesHereTitle: 'Drop files here to upload',
+  dropFilesHereDesc: 'Drag and drop one or multiple files to upload directly into this folder.',
+  uploadingFilesTitle: 'Uploading files',
+  bulkSelectedLabel: 'selected',
+  bulkMoveToFolder: 'Move to Folder',
+  bulkDownloadZip: 'Download ZIP',
+  bulkDeleteSelected: 'Move to Trash',
+  bulkClearSelection: 'Clear Selection',
+  bulkMoveModalTitle: 'Move Selected Files to Folder',
+  bulkMoveConfirm: 'Move Files',
+  bulkTrashModalTitle: 'Move Selected Files to Recycle Bin',
+  bulkTrashModalDesc: 'All selected files will be moved to the Recycle Bin and can be restored later.',
+  movedToFolderSuccess: 'Moved file to folder successfully.',
+  dropOntoFolderHint: 'Drop here to move or upload into folder',
+  selectAllFiles: 'Select all files',
+  manageDepartmentsTitle: 'Standardized Departments',
+  manageClassificationsTitle: 'Standardized Classifications',
+  addDepartmentPlaceholder: 'Enter new department name...',
+  addClassificationPlaceholder: 'Enter new classification name...',
+  addItemButton: 'Add',
+  selectDepartmentPlaceholder: '— Select Department —',
+  selectClassificationPlaceholder: '— Select Classification —',
+  noTaxonomyItems: 'No items added yet.',
 };
 
 const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {

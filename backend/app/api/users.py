@@ -27,6 +27,7 @@ class UserCreate(BaseModel):
     department: str | None = Field(default=None, max_length=160)
     gemini_api_key: SecretStr | None = None
     must_change_password: bool = True
+    can_print: bool = False
 
 
 class UserUpdate(BaseModel):
@@ -38,6 +39,7 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     password: SecretStr | None = Field(default=None, min_length=6, max_length=200)
     must_change_password: bool | None = None
+    can_print: bool | None = None
     gemini_api_key: SecretStr | None = None
 
 
@@ -58,6 +60,7 @@ def _user_dict(u: User) -> dict:
         "preferred_theme": u.preferred_theme or "light",
         "is_active": u.is_active,
         "must_change_password": bool(u.must_change_password),
+        "can_print": bool(u.role == UserRole.ADMIN or u.can_print),
     }
 
 
@@ -242,6 +245,7 @@ async def create_user(
         department=_clean_optional_text(payload.department),
         gemini_key_encrypted=encrypt_secret(key) if key else None,
         must_change_password=payload.must_change_password,
+        can_print=True if payload.role == UserRole.ADMIN else bool(payload.can_print),
     )
     db.add(user)
     await db.flush()
@@ -251,7 +255,12 @@ async def create_user(
             action="user.created",
             resource_type="user",
             resource_id=str(user.id),
-            detail={"role": user.role.value, "job_title": user.job_title, "must_change_password": user.must_change_password},
+            detail={
+                "role": user.role.value,
+                "job_title": user.job_title,
+                "must_change_password": user.must_change_password,
+                "can_print": user.can_print,
+            },
         )
     )
     await db.commit()
@@ -292,10 +301,15 @@ async def update_user(
         changes.append("department")
     if payload.role is not None:
         user.role = payload.role
+        if user.role == UserRole.ADMIN:
+            user.can_print = True
         changes.append("role")
     if payload.is_active is not None:
         user.is_active = payload.is_active
         changes.append("is_active")
+    if payload.can_print is not None:
+        user.can_print = True if user.role == UserRole.ADMIN else bool(payload.can_print)
+        changes.append("can_print")
     if payload.password is not None:
         try:
             user.password_hash = hash_password(payload.password.get_secret_value())

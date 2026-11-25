@@ -22,12 +22,14 @@ export default function DocumentModal({
   doc,
   token,
   language,
+  canPrint = false,
   onDownload,
   onClose,
 }: {
   doc: PreviewDoc;
   token: string;
   language: LocaleCode;
+  canPrint?: boolean;
   onDownload?: () => void;
   onClose: () => void;
 }) {
@@ -49,6 +51,7 @@ export default function DocumentModal({
   const isPdf = doc.mime_type === 'application/pdf';
 
   function handlePrint() {
+    if (!canPrint) return;
     if (isPdf && iframeRef.current?.contentWindow) {
       try {
         iframeRef.current.contentWindow.focus();
@@ -199,15 +202,17 @@ export default function DocumentModal({
               <AppIcon name="download" size={15} />
               <span className="hidden sm:inline">{t.download}</span>
             </button>
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="btn btn-muted text-xs py-2 px-3"
-              title={t.print}
-            >
-              <AppIcon name="printer" size={15} />
-              <span className="hidden sm:inline">{t.print}</span>
-            </button>
+            {canPrint && (
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="btn btn-muted text-xs py-2 px-3"
+                title={t.print}
+              >
+                <AppIcon name="printer" size={15} />
+                <span className="hidden sm:inline">{t.print}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}

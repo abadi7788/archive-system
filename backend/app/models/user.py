@@ -32,3 +32,4 @@ class User(UUIDPrimaryKey, MetadataMixin, Base):
     preferred_theme: Mapped[str] = mapped_column(String(16), nullable=False, default="light", server_default="light")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_print: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

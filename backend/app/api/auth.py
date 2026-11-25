@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db import get_db
 from app.models.audit_log import AuditLog
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter()
 
@@ -51,6 +51,7 @@ def _serialize_user(user: User) -> dict:
         "preferred_theme": user.preferred_theme or "light",
         "is_active": user.is_active,
         "must_change_password": bool(user.must_change_password),
+        "can_print": bool(user.role == UserRole.ADMIN or user.can_print),
     }
 
 

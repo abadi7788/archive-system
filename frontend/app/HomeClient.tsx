@@ -2,7 +2,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BrandMark, { AppIcon } from './BrandMark';
 import DocumentModal from './DocumentModal';
-import ArchiveView from './components/ArchiveView';
+import ArchiveView, { DRAG_DOC_IDS_MIME } from './components/ArchiveView';
 import EditDocumentModal from './components/EditDocumentModal';
 import FirstLoginPasswordModal from './components/FirstLoginPasswordModal';
 import LanguageSelectionModal from './components/LanguageSelectionModal';
@@ -19,7 +19,9 @@ import TrashView from './components/TrashView';
 import UploadView from './components/UploadView';
 import {
   ArchiveFilters,
+  ArchiveScope,
   AuditItem,
+  BulkUploadTask,
   DocItem,
   EmployeeLinkGroup,
   FolderItem,
@@ -28,6 +30,7 @@ import {
   OwnerSummary,
   StorageMetrics,
   SystemSummary,
+  TaxonomyData,
   ThemeMode,
   ToastItem,
   TrashData,
@@ -76,6 +79,43 @@ const EMPTY_TRASH: TrashData = {
   documents: [],
   total_count: 0,
 };
+
+const EMPTY_TAXONOMY: TaxonomyData = {
+  departments: [],
+  classifications: [],
+};
+
+const MAX_BULK_UPLOAD_FILES = 20;
+const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIMES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/pjpeg',
+  'image/webp',
+  'image/tiff',
+  'image/bmp',
+  'image/gif',
+]);
+const ALLOWED_UPLOAD_EXTS = new Set([
+  'pdf',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'tif',
+  'tiff',
+  'bmp',
+  'gif',
+]);
+
+function isAllowedUploadFile(file: File): boolean {
+  const mime = (file.type || '').toLowerCase();
+  if (ALLOWED_UPLOAD_MIMES.has(mime)) return true;
+  const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() || '' : '';
+  return ALLOWED_UPLOAD_EXTS.has(ext);
+}
 
 function readInitialLocale(propLocale?: LocaleCode): LocaleCode {
   if (typeof window !== 'undefined') {
@@ -132,14 +172,18 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const [expandedFolderIds, setExpandedFolderIds] = useState<Record<string, boolean>>({});
 
   // Archive & Explorer Data
+  const [archiveScope, setArchiveScope] = useState<ArchiveScope>('all');
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [visibleOwners, setVisibleOwners] = useState<OwnerSummary[]>([]);
+  const [taxonomy, setTaxonomy] = useState<TaxonomyData>(EMPTY_TAXONOMY);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [query, setQuery] = useState<string>('');
   const [filters, setFilters] = useState<ArchiveFilters>(EMPTY_FILTERS);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [bulkUploadTasks, setBulkUploadTasks] = useState<BulkUploadTask[]>([]);
+  const [sidebarDragOverId, setSidebarDragOverId] = useState<string | null>(null);
 
   // Recycle Bin
   const [trash, setTrash] = useState<TrashData>(EMPTY_TRASH);
@@ -160,9 +204,12 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const [stepUpToken, setStepUpToken] = useState<string>('');
   const [provider, setProvider] = useState<string>('local');
 
-  // Toasts
+  // Toasts & Refs
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const previewUrlRef = useRef<string | null>(null);
+  const uploadTrayTimerRef = useRef<number | null>(null);
+
+  const canPrint = Boolean(user && (user.role === 'admin' || user.can_print));
 
   const pushToast = useCallback((type: ToastItem['type'], text: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -183,6 +230,32 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     document.documentElement.dir = dir;
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [locale, dir, theme]);
+
+  // Enforce global print restriction for employees without print permission
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const printBlocked = Boolean(user && !canPrint);
+    document.documentElement.classList.toggle('print-blocked', printBlocked);
+
+    if (!printBlocked) {
+      return () => {
+        document.documentElement.classList.remove('print-blocked');
+      };
+    }
+
+    const handleBlockPrintShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('keydown', handleBlockPrintShortcut, true);
+    return () => {
+      window.removeEventListener('keydown', handleBlockPrintShortcut, true);
+      document.documentElement.classList.remove('print-blocked');
+    };
+  }, [user, canPrint]);
 
   // Persist user preferences locally
   const applyLocalPreferences = useCallback((nextLocale?: LocaleCode | null, nextTheme?: ThemeMode | null) => {
@@ -219,11 +292,19 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       URL.revokeObjectURL(previewUrlRef.current);
       previewUrlRef.current = null;
     }
+    if (uploadTrayTimerRef.current) {
+      window.clearTimeout(uploadTrayTimerRef.current);
+      uploadTrayTimerRef.current = null;
+    }
     setToken('');
     setUser(null);
+    setArchiveScope('all');
     setFolders([]);
     setDocs([]);
     setVisibleOwners([]);
+    setTaxonomy(EMPTY_TAXONOMY);
+    setBulkUploadTasks([]);
+    setSidebarDragOverId(null);
     setTrash(EMPTY_TRASH);
     setUsers([]);
     setLinkGroups([]);
@@ -337,6 +418,24 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     [apiFetch]
   );
 
+  const loadTaxonomy = useCallback(
+    async (overrideToken?: string) => {
+      try {
+        const res = await apiFetch('/taxonomy', {}, overrideToken);
+        if (res.ok) {
+          const data = await res.json();
+          setTaxonomy({
+            departments: Array.isArray(data?.departments) ? data.departments : [],
+            classifications: Array.isArray(data?.classifications) ? data.classifications : [],
+          });
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [apiFetch]
+  );
+
   const loadTrash = useCallback(
     async (overrideToken?: string) => {
       setLoadingTrash(true);
@@ -364,8 +463,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       overrideFolderId?: string,
       overrideQuery?: string,
       overrideFilters?: ArchiveFilters,
-      overrideToken?: string
+      overrideToken?: string,
+      overrideScope?: ArchiveScope
     ) => {
+      const activeScope = overrideScope !== undefined ? overrideScope : archiveScope;
       const activeFolder = overrideFolderId !== undefined ? overrideFolderId : selectedFolder;
       const activeQuery = overrideQuery !== undefined ? overrideQuery : query;
       const activeFilters = overrideFilters !== undefined ? overrideFilters : filters;
@@ -374,7 +475,13 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       try {
         const params = new URLSearchParams();
         if (activeQuery.trim()) params.set('q', activeQuery.trim());
-        if (activeFolder) params.set('folder_id', activeFolder);
+        if (activeScope === 'starred') {
+          params.set('starred_only', 'true');
+        } else if (activeScope === 'recent') {
+          params.set('recent_only', 'true');
+        } else if (activeFolder) {
+          params.set('folder_id', activeFolder);
+        }
         if (activeFilters.department) params.set('department', activeFilters.department);
         if (activeFilters.mime_type) params.set('mime_type', activeFilters.mime_type);
         if (activeFilters.classification) params.set('classification', activeFilters.classification);
@@ -395,7 +502,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         setSearchBusy(false);
       }
     },
-    [apiFetch, selectedFolder, query, filters]
+    [apiFetch, archiveScope, selectedFolder, query, filters]
   );
 
   const loadAdminData = useCallback(
@@ -453,8 +560,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     async (activeToken: string, role: string) => {
       await Promise.all([
         loadFolders(activeToken),
-        loadDocuments('', '', EMPTY_FILTERS, activeToken),
+        loadDocuments('', '', EMPTY_FILTERS, activeToken, 'all'),
         loadVisibleOwners(activeToken),
+        loadTaxonomy(activeToken),
         loadTrash(activeToken),
       ]);
 
@@ -462,7 +570,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         await loadAdminData(activeToken);
       }
     },
-    [loadFolders, loadDocuments, loadVisibleOwners, loadTrash, loadAdminData]
+    [loadFolders, loadDocuments, loadVisibleOwners, loadTaxonomy, loadTrash, loadAdminData]
   );
 
   const bootstrapSession = useCallback(
@@ -553,9 +661,20 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Derived unique departments and classifications
+  // Admin-managed standardized taxonomy lists (used as dropdowns in Upload & Edit)
+  const standardizedDepartments = useMemo(
+    () => taxonomy.departments.map((item) => item.name),
+    [taxonomy.departments]
+  );
+
+  const standardizedCategories = useMemo(
+    () => taxonomy.classifications.map((item) => item.name),
+    [taxonomy.classifications]
+  );
+
+  // Merged unique departments and classifications (for Archive search filters)
   const departments = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(standardizedDepartments);
     if (user?.department) set.add(user.department);
     docs.forEach((d) => {
       if (d.department) set.add(d.department);
@@ -564,15 +683,15 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       if (u.department) set.add(u.department);
     });
     return Array.from(set).sort();
-  }, [docs, users, user]);
+  }, [standardizedDepartments, docs, users, user]);
 
   const categories = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(standardizedCategories);
     docs.forEach((d) => {
       if (d.classification) set.add(d.classification);
     });
     return Array.from(set).sort();
-  }, [docs]);
+  }, [standardizedCategories, docs]);
 
   // Handlers: Auth & Preferences
   async function handleLogin(e: FormEvent) {
@@ -632,8 +751,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     if (prefs.preferred_language) {
       setShowLanguageModal(false);
     }
-    const nextT = getTranslations(prefs.preferred_language || locale);
-    pushToast('ok', nextT.savedSuccess);
   }
 
   async function handleChangePassword(currentPassword: string, newPassword: string) {
@@ -680,14 +797,23 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   // Handlers: Archive Explorer
   function handleSelectFolder(folderId: string) {
+    setArchiveScope('all');
     setSelectedFolder(folderId);
-    loadDocuments(folderId, query, filters);
+    loadDocuments(folderId, query, filters, undefined, 'all');
+  }
+
+  function handleSelectArchiveScope(nextScope: ArchiveScope) {
+    setSection('archive');
+    setMobileNavOpen(false);
+    setArchiveScope(nextScope);
+    setSelectedFolder('');
+    loadDocuments('', query, filters, undefined, nextScope);
   }
 
   function handleResetSearch() {
     setQuery('');
     setFilters(EMPTY_FILTERS);
-    loadDocuments(selectedFolder, '', EMPTY_FILTERS);
+    loadDocuments(selectedFolder, '', EMPTY_FILTERS, undefined, archiveScope);
   }
 
   async function handleCreateFolder(name: string, parentId: string | null) {
@@ -730,7 +856,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   async function handlePreviewDoc(doc: DocItem) {
     try {
-      const res = await apiFetch(`/documents/${doc.id}/download?inline=true`);
+      const res = await apiFetch(`/documents/${doc.id}/file?inline=true`);
       if (!res.ok) {
         const msg = await parseErrorDetail(res, t.errorGeneric);
         pushToast('err', msg);
@@ -770,7 +896,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   async function handleDownloadDoc(doc: { id: string; file_name: string }) {
     try {
-      const res = await apiFetch(`/documents/${doc.id}/download`);
+      const res = await apiFetch(`/documents/${doc.id}/file?inline=false`);
       if (!res.ok) {
         const msg = await parseErrorDetail(res, t.errorGeneric);
         pushToast('err', msg);
@@ -785,6 +911,163 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      pushToast('err', err?.message || t.errorGeneric);
+    }
+  }
+
+  async function handlePrintDoc(doc: DocItem) {
+    if (!canPrint) return;
+    try {
+      const res = await apiFetch(`/documents/${doc.id}/file?inline=true`);
+      if (!res.ok) {
+        const msg = await parseErrorDetail(res, t.errorGeneric);
+        pushToast('err', msg);
+        return;
+      }
+      const blob = await res.blob();
+      const mime = (doc.mime_type || blob.type || '').toLowerCase();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const cleanup = () => {
+        window.setTimeout(() => {
+          iframe.remove();
+          URL.revokeObjectURL(blobUrl);
+        }, 60_000);
+      };
+
+      if (mime.startsWith('image/')) {
+        const frameDoc = iframe.contentWindow?.document;
+        if (!frameDoc) {
+          iframe.remove();
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        frameDoc.open();
+        frameDoc.write(`<!doctype html><html><head><title></title><style>
+          @page { margin: 8mm; }
+          html, body { margin: 0; padding: 0; background: #fff; text-align: center; }
+          img { max-width: 100%; max-height: 98vh; object-fit: contain; display: block; margin: 0 auto; }
+        </style></head><body><img id="print-img" /></body></html>`);
+        frameDoc.close();
+        const imgEl = frameDoc.getElementById('print-img') as HTMLImageElement | null;
+        if (imgEl) {
+          imgEl.onload = () => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+            } finally {
+              cleanup();
+            }
+          };
+          imgEl.src = blobUrl;
+        } else {
+          cleanup();
+        }
+      } else {
+        iframe.onload = () => {
+          window.setTimeout(() => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+            } finally {
+              cleanup();
+            }
+          }, 250);
+        };
+        iframe.src = blobUrl;
+      }
+    } catch (err: any) {
+      pushToast('err', err?.message || t.errorGeneric);
+    }
+  }
+
+  async function handleToggleStar(doc: DocItem) {
+    const nextStarred = !Boolean(doc.is_starred);
+    const prevDocs = docs;
+    setDocs((curr) => {
+      if (archiveScope === 'starred' && !nextStarred) {
+        return curr.filter((item) => item.id !== doc.id);
+      }
+      return curr.map((item) =>
+        item.id === doc.id ? { ...item, is_starred: nextStarred } : item
+      );
+    });
+
+    try {
+      const res = await apiFetch(`/documents/${doc.id}/star`, { method: 'POST' });
+      if (!res.ok) {
+        setDocs(prevDocs);
+        const msg = await parseErrorDetail(res, t.errorGeneric);
+        pushToast('err', msg);
+      }
+    } catch (err: any) {
+      setDocs(prevDocs);
+      pushToast('err', err?.message || t.errorGeneric);
+    }
+  }
+
+  async function handleMoveDocsToFolder(docIds: string[], targetFolderId: string | null) {
+    if (!docIds.length) return;
+    const res = await apiFetch('/documents/bulk/move', {
+      method: 'POST',
+      body: JSON.stringify({ document_ids: docIds, folder_id: targetFolderId }),
+    });
+    if (!res.ok) {
+      const msg = await parseErrorDetail(res, t.errorGeneric);
+      pushToast('err', msg);
+      throw new Error(msg);
+    }
+    await Promise.all([loadFolders(), loadDocuments()]);
+    pushToast('ok', t.movedToFolderSuccess);
+  }
+
+  async function handleBulkTrashDocs(docIds: string[]) {
+    if (!docIds.length) return;
+    const res = await apiFetch('/documents/bulk/trash', {
+      method: 'POST',
+      body: JSON.stringify({ document_ids: docIds }),
+    });
+    if (!res.ok) {
+      const msg = await parseErrorDetail(res, t.errorGeneric);
+      pushToast('err', msg);
+      throw new Error(msg);
+    }
+    await Promise.all([loadFolders(), loadDocuments(), loadTrash()]);
+    pushToast('ok', t.savedSuccess);
+  }
+
+  async function handleBulkDownloadZip(docIds: string[]) {
+    if (!docIds.length) return;
+    try {
+      const res = await apiFetch('/documents/bulk/download-zip', {
+        method: 'POST',
+        body: JSON.stringify({ document_ids: docIds }),
+      });
+      if (!res.ok) {
+        const msg = await parseErrorDetail(res, t.errorGeneric);
+        pushToast('err', msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `archive-documents-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      pushToast('ok', t.savedSuccess);
     } catch (err: any) {
       pushToast('err', err?.message || t.errorGeneric);
     }
@@ -813,45 +1096,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     pushToast('ok', t.savedSuccess);
   }
 
-  async function handleExport(kind: 'xlsx' | 'pdf') {
-    if (!docs.length) {
-      pushToast('info', t.emptyArchiveTitle);
-      return;
-    }
-    try {
-      const params = new URLSearchParams();
-      params.set('format', kind);
-      docs.forEach((d) => params.append('ids', d.id));
-      const res = await apiFetch(`/exports/documents/export?${params.toString()}`);
-      if (!res.ok) {
-        const msg = await parseErrorDetail(res, t.errorGeneric);
-        pushToast('err', msg);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `archive-export.${kind}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      pushToast('ok', t.savedSuccess);
-    } catch (err: any) {
-      pushToast('err', err?.message || t.errorGeneric);
-    }
-  }
-
-  // Real XHR upload with progress bar (0% - 100%)
-  function handleUploadDocument(
+  function uploadFileViaXhr(
     payload: {
       file: File;
-      folderId: string;
-      department: string;
-      classification: string;
-      keywords: string;
-      summary: string;
+      folderId?: string | null;
+      department?: string;
+      classification?: string;
+      keywords?: string;
+      summary?: string;
     },
     onProgress: (percent: number) => void
   ): Promise<DocItem> {
@@ -865,7 +1117,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       if (payload.summary) formData.append('summary', payload.summary);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API}/documents/upload`, true);
+      xhr.open('POST', `${API}/documents`, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
       xhr.upload.onprogress = (ev) => {
@@ -875,7 +1127,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         }
       };
 
-      xhr.onload = async () => {
+      xhr.onload = () => {
         if (xhr.status === 401) {
           clearSession(t.sessionExpired);
           reject(new Error(t.sessionExpired));
@@ -885,8 +1137,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           onProgress(100);
           try {
             const doc: DocItem = JSON.parse(xhr.responseText);
-            await Promise.all([loadFolders(), loadDocuments()]);
-            pushToast('ok', t.uploadSuccess);
             resolve(doc);
           } catch {
             reject(new Error(t.errorGeneric));
@@ -899,19 +1149,123 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           } catch {
             // ignore
           }
-          pushToast('err', errMsg);
           reject(new Error(errMsg));
         }
       };
 
       xhr.onerror = () => {
         health.reportConnectionFailure();
-        pushToast('err', t.networkError);
         reject(new Error(t.networkError));
       };
 
       xhr.send(formData);
     });
+  }
+
+  // Single document upload from dedicated UploadView
+  async function handleUploadDocument(
+    payload: {
+      file: File;
+      folderId: string;
+      department: string;
+      classification: string;
+      keywords: string;
+      summary: string;
+    },
+    onProgress: (percent: number) => void
+  ): Promise<DocItem> {
+    try {
+      const doc = await uploadFileViaXhr(payload, onProgress);
+      await Promise.all([loadFolders(), loadDocuments()]);
+      pushToast('ok', t.uploadSuccess);
+      return doc;
+    } catch (err: any) {
+      pushToast('err', err?.message || t.errorGeneric);
+      throw err;
+    }
+  }
+
+  // Bulk Drag & Drop Upload (1–20 files) directly inside Archive
+  async function handleBulkUploadFiles(files: File[], targetFolderId: string | null) {
+    if (!files.length) return;
+    if (uploadTrayTimerRef.current) {
+      window.clearTimeout(uploadTrayTimerRef.current);
+      uploadTrayTimerRef.current = null;
+    }
+
+    let queue = files;
+    if (files.length > MAX_BULK_UPLOAD_FILES) {
+      pushToast('info', t.dropFilesHereDesc);
+      queue = files.slice(0, MAX_BULK_UPLOAD_FILES);
+    }
+
+    const initialTasks: BulkUploadTask[] = queue.map((file, idx) => {
+      const id = `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`;
+      if (file.size > MAX_UPLOAD_BYTES || !isAllowedUploadFile(file)) {
+        return { id, fileName: file.name, progress: 0, status: 'error', error: t.dropzoneHint };
+      }
+      return { id, fileName: file.name, progress: 0, status: 'uploading' };
+    });
+
+    setBulkUploadTasks(initialTasks);
+
+    let successCount = 0;
+    let errorCount = initialTasks.filter((task) => task.status === 'error').length;
+
+    for (let i = 0; i < queue.length; i += 1) {
+      const task = initialTasks[i];
+      if (task.status === 'error') continue;
+
+      setBulkUploadTasks((prev) =>
+        prev.map((item) =>
+          item.id === task.id ? { ...item, status: 'uploading', progress: 2 } : item
+        )
+      );
+
+      try {
+        await uploadFileViaXhr(
+          {
+            file: queue[i],
+            folderId: targetFolderId,
+            department: user?.department || '',
+          },
+          (pct) => {
+            setBulkUploadTasks((prev) =>
+              prev.map((item) => (item.id === task.id ? { ...item, progress: pct } : item))
+            );
+          }
+        );
+        successCount += 1;
+        setBulkUploadTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id ? { ...item, status: 'done', progress: 100 } : item
+          )
+        );
+      } catch (err: any) {
+        errorCount += 1;
+        setBulkUploadTasks((prev) =>
+          prev.map((item) =>
+            item.id === task.id
+              ? { ...item, status: 'error', error: err?.message || t.errorGeneric }
+              : item
+          )
+        );
+      }
+    }
+
+    if (successCount > 0) {
+      await Promise.all([loadFolders(), loadDocuments()]);
+      pushToast('ok', t.uploadSuccess);
+    } else if (errorCount > 0) {
+      pushToast('err', t.errorGeneric);
+    }
+
+    if (errorCount === 0) {
+      uploadTrayTimerRef.current = window.setTimeout(() => {
+        setBulkUploadTasks([]);
+        uploadTrayTimerRef.current = null;
+      }, 4500);
+    }
   }
 
   // Handlers: Recycle Bin
@@ -973,7 +1327,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     pushToast('ok', t.savedSuccess);
   }
 
-  // Handlers: Admin Users & Linking
+  // Handlers: Admin Users, Taxonomy & Linking
   async function handleCreateUser(payload: {
     username: string;
     full_name: string;
@@ -981,6 +1335,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     password: string;
     role: string;
     department: string;
+    can_print?: boolean;
   }) {
     const res = await apiFetch('/users', {
       method: 'POST',
@@ -1003,6 +1358,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       role?: string;
       department?: string | null;
       is_active?: boolean;
+      can_print?: boolean;
       password?: string;
     }
   ) {
@@ -1021,6 +1377,32 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       persistSession(token, merged);
     }
     await Promise.all([loadAdminData(), loadVisibleOwners()]);
+    pushToast('ok', t.savedSuccess);
+  }
+
+  async function handleCreateTaxonomyItem(
+    kind: 'department' | 'classification',
+    name: string
+  ) {
+    const res = await apiFetch('/taxonomy', {
+      method: 'POST',
+      body: JSON.stringify({ kind, name }),
+    });
+    if (!res.ok) {
+      const msg = await parseErrorDetail(res, t.errorGeneric);
+      throw new Error(msg);
+    }
+    await loadTaxonomy();
+    pushToast('ok', t.savedSuccess);
+  }
+
+  async function handleDeleteTaxonomyItem(itemId: string) {
+    const res = await apiFetch(`/taxonomy/${itemId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const msg = await parseErrorDetail(res, t.errorGeneric);
+      throw new Error(msg);
+    }
+    await loadTaxonomy();
     pushToast('ok', t.savedSuccess);
   }
 
@@ -1191,9 +1573,13 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       loadTrash();
     } else if (target === 'settings' && user?.role === 'admin') {
       loadAdminData();
+      loadTaxonomy();
     } else if (target === 'archive') {
+      setArchiveScope('all');
       loadFolders();
-      loadDocuments();
+      loadDocuments(selectedFolder, query, filters, undefined, 'all');
+    } else if (target === 'upload') {
+      loadTaxonomy();
     }
   }
 
@@ -1359,7 +1745,11 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   const pageTitle =
     section === 'archive'
-      ? t.navArchive
+      ? archiveScope === 'recent'
+        ? t.navRecent
+        : archiveScope === 'starred'
+        ? t.navStarred
+        : t.navArchive
       : section === 'upload'
       ? t.navUpload
       : section === 'trash'
@@ -1377,6 +1767,49 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     { key: 'trash', label: t.navTrash, icon: 'trash', badge: trash.total_count },
     { key: 'settings', label: t.navSettings, icon: 'settings' },
   ];
+
+  const handleSidebarFolderDragOver = (
+    e: React.DragEvent,
+    dropId: string
+  ) => {
+    const types = Array.from(e.dataTransfer.types || []);
+    if (types.includes(DRAG_DOC_IDS_MIME) || types.includes('Files')) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = types.includes('Files') ? 'copy' : 'move';
+      if (sidebarDragOverId !== dropId) {
+        setSidebarDragOverId(dropId);
+      }
+    }
+  };
+
+  const handleSidebarFolderDrop = (
+    e: React.DragEvent,
+    targetFolderId: string | null
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSidebarDragOverId(null);
+
+    const rawDocIds = e.dataTransfer.getData(DRAG_DOC_IDS_MIME);
+    if (rawDocIds) {
+      try {
+        const ids = JSON.parse(rawDocIds);
+        if (Array.isArray(ids) && ids.length > 0) {
+          void handleMoveDocsToFolder(ids, targetFolderId);
+          return;
+        }
+      } catch {
+        // ignore invalid payload
+      }
+    }
+
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    if (droppedFiles.length > 0) {
+      setSection('archive');
+      void handleBulkUploadFiles(droppedFiles, targetFolderId);
+    }
+  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-[#0F172A] text-slate-200 select-none">
@@ -1398,46 +1831,96 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         </button>
       </div>
 
-      {/* Navigation Links + Quick Collapsible Folder Tree */}
+      {/* Navigation Links + Shortcuts + Quick Collapsible Folder Tree */}
       <nav aria-label="Main Navigation" className="flex-1 px-3 py-4 overflow-y-auto space-y-5">
         <div className="space-y-1">
           {navItems.map((item) => {
-            const active = section === item.key;
+            const active =
+              item.key === 'archive'
+                ? section === 'archive' && archiveScope === 'all'
+                : section === item.key;
             return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleNavigate(item.key)}
-                className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  active
-                    ? 'bg-blue-600/20 text-white font-semibold'
-                    : 'text-slate-300 font-medium hover:bg-slate-800/70 hover:text-white'
-                }`}
-              >
-                <span className="flex items-center gap-3 min-w-0">
-                  <span className={active ? 'text-blue-400' : 'text-slate-400'}>
-                    <AppIcon name={item.icon} size={18} />
+              <React.Fragment key={item.key}>
+                <button
+                  type="button"
+                  onClick={() => handleNavigate(item.key)}
+                  className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    active
+                      ? 'bg-blue-600/20 text-white font-semibold'
+                      : 'text-slate-300 font-medium hover:bg-slate-800/70 hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className={active ? 'text-blue-400' : 'text-slate-400'}>
+                      <AppIcon name={item.icon} size={18} />
+                    </span>
+                    <span className="truncate">{item.label}</span>
                   </span>
-                  <span className="truncate">{item.label}</span>
-                </span>
-                {typeof item.badge === 'number' && item.badge > 0 && (
-                  <span
-                    dir="ltr"
-                    className={`min-w-[22px] h-5 px-1.5 rounded-md text-[11px] font-semibold inline-flex items-center justify-center tabular-nums ${
-                      active
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
+                  {typeof item.badge === 'number' && item.badge > 0 && (
+                    <span
+                      dir="ltr"
+                      className={`min-w-[22px] h-5 px-1.5 rounded-md text-[11px] font-semibold inline-flex items-center justify-center tabular-nums ${
+                        active
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+
+                {item.key === 'archive' && (
+                  <div className="ps-3 space-y-0.5 pt-0.5 pb-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectArchiveScope('recent')}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
+                        section === 'archive' && archiveScope === 'recent'
+                          ? 'bg-blue-600/20 text-white font-semibold'
+                          : 'text-slate-400 font-medium hover:bg-slate-800/70 hover:text-white'
+                      }`}
+                    >
+                      <AppIcon
+                        name="clock"
+                        size={15}
+                        className={
+                          section === 'archive' && archiveScope === 'recent'
+                            ? 'text-blue-400 shrink-0'
+                            : 'text-slate-500 shrink-0'
+                        }
+                      />
+                      <span className="truncate">{t.navRecent}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectArchiveScope('starred')}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
+                        section === 'archive' && archiveScope === 'starred'
+                          ? 'bg-blue-600/20 text-white font-semibold'
+                          : 'text-slate-400 font-medium hover:bg-slate-800/70 hover:text-white'
+                      }`}
+                    >
+                      <AppIcon
+                        name="star"
+                        size={15}
+                        className={
+                          section === 'archive' && archiveScope === 'starred'
+                            ? 'text-amber-400 shrink-0'
+                            : 'text-slate-500 shrink-0'
+                        }
+                      />
+                      <span className="truncate">{t.navStarred}</span>
+                    </button>
+                  </div>
                 )}
-              </button>
+              </React.Fragment>
             );
           })}
         </div>
 
-        {/* Collapsible Quick Folder Tree */}
+        {/* Collapsible Quick Folder Tree (supports Drag-to-Folder & Drag-to-Upload) */}
         <div className="pt-4 border-t border-slate-800/80">
           <button
             type="button"
@@ -1461,8 +1944,15 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                   setMobileNavOpen(false);
                   handleSelectFolder('');
                 }}
+                onDragOver={(e) => handleSidebarFolderDragOver(e, '__root__')}
+                onDragLeave={() => {
+                  if (sidebarDragOverId === '__root__') setSidebarDragOverId(null);
+                }}
+                onDrop={(e) => handleSidebarFolderDrop(e, null)}
                 className={`w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-                  section === 'archive' && !selectedFolder
+                  sidebarDragOverId === '__root__'
+                    ? 'bg-blue-600/30 text-white ring-2 ring-blue-400 font-semibold'
+                    : section === 'archive' && archiveScope === 'all' && !selectedFolder
                     ? 'bg-slate-800 text-white font-semibold'
                     : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
                 }`}
@@ -1472,7 +1962,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                     name="archive"
                     size={14}
                     className={
-                      section === 'archive' && !selectedFolder
+                      section === 'archive' && archiveScope === 'all' && !selectedFolder
                         ? 'text-blue-400 shrink-0'
                         : 'text-slate-500 shrink-0'
                     }
@@ -1497,14 +1987,25 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                     const children = byParent.get(folder.id) || [];
                     const hasChildren = children.length > 0;
                     const isExpanded = Boolean(expandedFolderIds[folder.id]);
-                    const isSelected = section === 'archive' && selectedFolder === folder.id;
+                    const isSelected =
+                      section === 'archive' &&
+                      archiveScope === 'all' &&
+                      selectedFolder === folder.id;
+                    const isDragTarget = sidebarDragOverId === folder.id;
 
                     return (
                       <div key={folder.id}>
                         <div
                           style={{ paddingInlineStart: `${depth * 14}px` }}
+                          onDragOver={(e) => handleSidebarFolderDragOver(e, folder.id)}
+                          onDragLeave={() => {
+                            if (sidebarDragOverId === folder.id) setSidebarDragOverId(null);
+                          }}
+                          onDrop={(e) => handleSidebarFolderDrop(e, folder.id)}
                           className={`group flex items-center gap-1 rounded-lg pe-2 py-1 text-xs transition-colors ${
-                            isSelected
+                            isDragTarget
+                              ? 'bg-blue-600/30 text-white ring-2 ring-blue-400 font-semibold'
+                              : isSelected
                               ? 'bg-slate-800 text-white font-semibold'
                               : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                           }`}
@@ -1670,6 +2171,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             <ArchiveView
               user={user}
               token={token}
+              canPrint={canPrint}
+              archiveScope={archiveScope}
               folders={folders}
               docs={docs}
               visibleOwners={visibleOwners}
@@ -1680,20 +2183,27 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               filters={filters}
               busy={searchBusy}
               loadingFolders={loadingFolders}
+              bulkUploadTasks={bulkUploadTasks}
               t={t}
               dir={dir}
               onQueryChange={setQuery}
               onFiltersChange={setFilters}
               onSelectFolder={handleSelectFolder}
-              onSearch={(fId, q, f) => loadDocuments(fId, q, f)}
+              onSearch={(fId, q, f) => loadDocuments(fId, q, f, undefined, archiveScope)}
               onResetSearch={handleResetSearch}
               onCreateFolder={handleCreateFolder}
               onDeleteFolder={handleSoftDeleteFolder}
               onPreviewDoc={handlePreviewDoc}
+              onPrintDoc={handlePrintDoc}
+              onToggleStar={handleToggleStar}
               onEditDoc={(doc) => setEditingDoc(doc)}
               onDownloadDoc={handleDownloadDoc}
               onDeleteDoc={handleSoftDeleteDoc}
-              onExport={handleExport}
+              onMoveDocsToFolder={handleMoveDocsToFolder}
+              onBulkTrashDocs={handleBulkTrashDocs}
+              onBulkDownloadZip={handleBulkDownloadZip}
+              onBulkUploadFiles={handleBulkUploadFiles}
+              onDismissUploadTray={() => setBulkUploadTasks([])}
               onGoUpload={() => handleNavigate('upload')}
             />
           )}
@@ -1702,15 +2212,16 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             <UploadView
               user={user}
               folders={folders}
-              departments={departments}
-              categories={categories}
+              departments={standardizedDepartments}
+              categories={standardizedCategories}
               defaultFolderId={selectedFolder}
               t={t}
               onUpload={handleUploadDocument}
               onGoArchive={(folderId) => {
+                setArchiveScope('all');
                 if (folderId !== undefined) {
                   setSelectedFolder(folderId);
-                  loadDocuments(folderId, query, filters);
+                  loadDocuments(folderId, query, filters, undefined, 'all');
                 }
                 setSection('archive');
               }}
@@ -1738,6 +2249,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               users={users}
               linkGroups={linkGroups}
               folders={folders}
+              taxonomy={taxonomy}
               departments={departments}
               categories={categories}
               audit={audit}
@@ -1757,6 +2269,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onCreateLinkGroup={handleCreateLinkGroup}
               onUpdateLinkGroup={handleUpdateLinkGroup}
               onDeleteLinkGroup={handleDeleteLinkGroup}
+              onCreateTaxonomyItem={handleCreateTaxonomyItem}
+              onDeleteTaxonomyItem={handleDeleteTaxonomyItem}
               onSaveGeminiSettings={handleSaveGeminiSettings}
               onTestGeminiSettings={handleTestGeminiSettings}
               onUnlockStorage={handleUnlockStorage}
@@ -1768,7 +2282,13 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onDeleteFolder={handleSoftDeleteFolder}
               onTriggerReindex={handleTriggerReindex}
               onRefreshAdmin={async () => {
-                await Promise.all([loadAdminData(), loadFolders(), loadVisibleOwners(), loadTrash()]);
+                await Promise.all([
+                  loadAdminData(),
+                  loadFolders(),
+                  loadVisibleOwners(),
+                  loadTaxonomy(),
+                  loadTrash(),
+                ]);
               }}
             />
           )}
@@ -1781,6 +2301,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           doc={previewDoc}
           token={token}
           language={locale}
+          canPrint={canPrint}
           onDownload={() => handleDownloadDoc({ id: previewDoc.id, file_name: previewDoc.file_name })}
           onClose={handleClosePreview}
         />
@@ -1791,8 +2312,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         <EditDocumentModal
           doc={editingDoc}
           folders={folders}
-          departments={departments}
-          categories={categories}
+          departments={standardizedDepartments}
+          categories={standardizedCategories}
           t={t}
           dir={dir}
           onSave={handleSaveDocEdit}

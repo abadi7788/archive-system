@@ -12,6 +12,27 @@ export type User = {
   preferred_theme?: ThemeMode;
   is_active?: boolean;
   must_change_password?: boolean;
+  can_print?: boolean;
+};
+
+export type ArchiveScope = 'all' | 'recent' | 'starred';
+
+export type TaxonomyItem = {
+  id: string;
+  name: string;
+};
+
+export type TaxonomyData = {
+  departments: TaxonomyItem[];
+  classifications: TaxonomyItem[];
+};
+
+export type BulkUploadTask = {
+  id: string;
+  fileName: string;
+  progress: number;
+  status: 'uploading' | 'done' | 'error';
+  error?: string;
 };
 
 export type OwnerSummary = {
@@ -68,6 +89,7 @@ export type DocItem = {
   owner_username?: string | null;
   owner_job_title?: string | null;
   can_manage?: boolean;
+  is_starred?: boolean;
   created_at?: string;
   deleted_at?: string | null;
   deleted_by_name?: string | null;

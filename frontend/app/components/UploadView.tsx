@@ -78,12 +78,24 @@ export default function UploadView({
       setFile(null);
       return;
     }
-    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/tiff'];
-    if (!allowed.includes(candidate.type)) {
+    const allowedMimes = [
+      'application/pdf',
+      'application/x-pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/pjpeg',
+      'image/png',
+      'image/x-png',
+      'image/webp',
+      'image/tiff',
+    ];
+    const ext = (candidate.name || '').toLowerCase().split('.').pop() || '';
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff'];
+    if (!allowedMimes.includes((candidate.type || '').toLowerCase()) && !allowedExts.includes(ext)) {
       setError(t.dropzoneHint);
       return;
     }
-    if (candidate.size > 30 * 1024 * 1024) {
+    if (candidate.size > 40 * 1024 * 1024) {
       setError(t.dropzoneHint);
       return;
     }
@@ -291,34 +303,58 @@ export default function UploadView({
 
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
               {t.departmentLabel}
-              <input
-                list="upload-departments-list"
-                className="field mt-1.5"
-                placeholder={t.departmentPlaceholder}
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-              />
-              <datalist id="upload-departments-list">
-                {departments.map((d) => (
-                  <option key={d} value={d} />
-                ))}
-              </datalist>
+              {departments.length > 0 ? (
+                <select
+                  className="field mt-1.5"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                >
+                  <option value="">{t.selectDepartmentPlaceholder}</option>
+                  {department && !departments.includes(department) && (
+                    <option value={department}>{department}</option>
+                  )}
+                  {departments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="field mt-1.5"
+                  placeholder={t.departmentPlaceholder}
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                />
+              )}
             </label>
 
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
               {t.classificationLabel} ({t.optional})
-              <input
-                list="upload-categories-list"
-                className="field mt-1.5"
-                placeholder={t.keywordPlaceholder}
-                value={classification}
-                onChange={(e) => setClassification(e.target.value)}
-              />
-              <datalist id="upload-categories-list">
-                {categories.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
+              {categories.length > 0 ? (
+                <select
+                  className="field mt-1.5"
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value)}
+                >
+                  <option value="">{t.selectClassificationPlaceholder}</option>
+                  {classification && !categories.includes(classification) && (
+                    <option value={classification}>{classification}</option>
+                  )}
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="field mt-1.5"
+                  placeholder={t.keywordPlaceholder}
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value)}
+                />
+              )}
             </label>
 
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
