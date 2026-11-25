@@ -1539,7 +1539,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               <BrandMark size={50} />
               <h2 dir="ltr" className="text-xl sm:text-2xl font-bold tracking-tight">Archive YemanY</h2>
             </div>
-            <LoginShowcase t={t} />
+            <LoginShowcase />
           </section>
           <div className="login-form-panel bg-white dark:bg-[#0F2137]">
             <div className="login-preferences flex justify-end gap-2">

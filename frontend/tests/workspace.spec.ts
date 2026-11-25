@@ -303,7 +303,7 @@ test('storage restrictions do not crash login or lose an in-memory choice', asyn
 });
 
 for (const language of ['ar', 'en']) {
-  test(`fullscreen login illustration is interactive and keyboard accessible (${language})`, async ({ page }) => {
+  test(`fullscreen login keeps pointer interaction without bottom controls (${language})`, async ({ page }) => {
     await page.setViewportSize({ width: 1536, height: 864 });
     await mockApi(page);
     const errors: string[] = [];
@@ -313,19 +313,17 @@ for (const language of ['ar', 'en']) {
     await page.addInitScript((lang) => localStorage.setItem('archive-pref-lang', lang), language);
     await page.goto('/');
     await expect(page.locator('#login-username')).toBeVisible();
-    const group = page.locator('.showcase-mode-group');
-    await expect(group.getByRole('button')).toHaveCount(3);
-    const modes = ['organize', 'find', 'protect'];
-    for (let index = 0; index < modes.length; index += 1) {
-      const mode = modes[index];
-      const button = group.getByRole('button').nth(index);
-      await button.focus();
-      await page.keyboard.press('Enter');
-      await expect(button).toHaveAttribute('aria-pressed', 'true');
-      await expect(group.locator('[aria-pressed="true"]')).toHaveCount(1);
-      await expect(page.locator('.showcase-scene')).toHaveAttribute('data-mode', mode);
-      await expect(page.locator('#login-demo-description')).not.toBeEmpty();
-    }
+    const showcase = page.locator('.login-showcase');
+    await expect(showcase).toBeVisible();
+    await expect(showcase.locator('button')).toHaveCount(0);
+    await expect(page.locator('.showcase-controls, .showcase-description, #login-demo-description')).toHaveCount(0);
+    await expect(showcase).not.toContainText(language === 'ar' ? 'مجلدات منظّمة' : 'Organized folders');
+    const stage = page.locator('.showcase-stage');
+    const bounds = await stage.boundingBox();
+    await page.mouse.move(bounds!.x + 20, bounds!.y + 20);
+    await expect.poll(() => stage.evaluate((element) => element.style.getPropertyValue('--tilt-x'))).not.toBe('0deg');
+    await page.mouse.move(0, 0);
+    await expect.poll(() => stage.evaluate((element) => element.style.getPropertyValue('--tilt-x'))).toBe('0deg');
     // The illustration is not connected to account or document services.
     expect(authRequests).toEqual([]);
     expect(errors).toEqual([]);
@@ -333,11 +331,11 @@ for (const language of ['ar', 'en']) {
     expect(await page.locator('.login-portal').evaluate((element) => getComputedStyle(element).borderRadius)).toBe('0px');
     await page.getByRole('button', { name: language === 'ar' ? 'المظهر' : 'Theme', exact: true }).click();
     await expect(page.locator('html')).toHaveClass(/dark/);
-    await expect(group.getByRole('button').last()).toHaveAttribute('aria-pressed', 'true');
+    await expect(showcase.locator('button')).toHaveCount(0);
   });
 }
 
-test('reduced motion disables decorative pointer tilt without disabling interaction', async ({ page }) => {
+test('reduced motion disables decorative pointer tilt', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mockApi(page);
@@ -348,8 +346,7 @@ test('reduced motion disables decorative pointer tilt without disabling interact
   const bounds = await stage.boundingBox();
   await page.mouse.move(bounds!.x + 10, bounds!.y + 10);
   expect(await stage.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
-  await page.getByRole('button', { name: 'Protect', exact: true }).click();
-  await expect(page.locator('.showcase-scene')).toHaveAttribute('data-mode', 'protect');
+  await expect(page.locator('.showcase-controls')).toHaveCount(0);
   expect(await stage.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
 });
 
@@ -360,7 +357,7 @@ test('compact desktop login fills the viewport without clipping its controls', a
   await page.goto('/');
   await expect(page.locator('#login-username')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeInViewport();
-  await expect(page.getByRole('button', { name: 'Protect', exact: true })).toBeInViewport();
+  await expect(page.locator('.showcase-emblem')).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(600);
 });
