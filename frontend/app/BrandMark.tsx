@@ -164,6 +164,38 @@ const glyphs: Record<string, React.ReactNode> = {
       <polyline points="14 2 14 8 20 8" />
     </>
   ),
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 15-5-5L5 20" />
+    </>
+  ),
+  folderOpen: (
+    <>
+      <path d="M3 7a2 2 0 0 1 2-2h4.4a2 2 0 0 1 1.4.58l1.2 1.2A2 2 0 0 0 13.4 7.4H19a2 2 0 0 1 2 2v1.6" />
+      <path d="M3 10.5h18l-1.6 7.4a2 2 0 0 1-1.95 1.6H5.55a2 2 0 0 1-1.95-1.6L3 10.5Z" />
+    </>
+  ),
+  menu: (
+    <>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+    </>
+  ),
+  chevronDown: <polyline points="6 9 12 15 18 9" />,
+  chevronRight: <polyline points="9 18 15 12 9 6" />,
+  chevronLeft: <polyline points="15 18 9 12 15 6" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  maximize: (
+    <>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </>
+  ),
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
 };
 

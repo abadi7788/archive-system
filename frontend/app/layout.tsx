@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ar" dir="rtl" className={ibmPlexArabic.variable} suppressHydrationWarning>
-      <body className="font-sans antialiased bg-[#F8FAFC] text-slate-900 dark:bg-[#0B1120] dark:text-slate-100">
+      <body className="font-sans antialiased bg-[#F1F5F9] text-slate-900 dark:bg-[#0B1120] dark:text-slate-100">
         <PwaRegister />
         {children}
       </body>
