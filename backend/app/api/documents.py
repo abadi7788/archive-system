@@ -5,9 +5,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import (
+    build_document_visibility_clause,
+    build_user_display_map,
+    get_visible_owner_ids,
+)
 from app.api.deps import current_user
 from app.db import SessionLocal, get_db
 from app.models.audit_log import AuditLog
@@ -22,13 +27,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/tiff"}
-
-
-def _visible_to(user: User):
-    if user.role == UserRole.ADMIN:
-        return True
-    shared = select(FolderGrant.folder_id).where(FolderGrant.user_id == user.id)
-    return or_(Document.user_id == user.id, Document.folder_id.in_(shared))
 
 
 async def _can_write_doc(doc: Document, user: User, db: AsyncSession) -> bool:
@@ -50,7 +48,7 @@ async def _can_write_doc(doc: Document, user: User, db: AsyncSession) -> bool:
 
 
 async def build_folder_breadcrumbs(db: AsyncSession) -> dict[uuid.UUID, str]:
-    """Resolve full Arabic hierarchy breadcrumb string for every folder id."""
+    """Resolve hierarchy breadcrumb string for every folder id."""
     rows = (await db.execute(select(Folder.id, Folder.name, Folder.parent_id))).all()
     by_id = {row.id: (row.name, row.parent_id) for row in rows}
     resolved: dict[uuid.UUID, str] = {}
@@ -67,7 +65,7 @@ async def build_folder_breadcrumbs(db: AsyncSession) -> dict[uuid.UUID, str]:
             parts.append(name)
             curr = parent_id
         parts.reverse()
-        crumb = "الرئيسية" + (" > " + " > ".join(parts) if parts else "")
+        crumb = " / ".join(parts) if parts else ""
         resolved[fid] = crumb
         return crumb
 
@@ -77,8 +75,10 @@ async def build_folder_breadcrumbs(db: AsyncSession) -> dict[uuid.UUID, str]:
 
 
 def format_document_path(folder_id: uuid.UUID | None, file_name: str, breadcrumbs: dict[uuid.UUID, str]) -> tuple[str, str]:
-    crumb = breadcrumbs.get(folder_id, "الرئيسية") if folder_id else "الرئيسية"
-    return crumb, f"{crumb} > {file_name}"
+    crumb = breadcrumbs.get(folder_id, "") if folder_id else ""
+    if crumb:
+        return crumb, f"{crumb} / {file_name}"
+    return "", file_name
 
 
 async def run_ocr_background(
@@ -87,10 +87,10 @@ async def run_ocr_background(
     mime_type: str,
     user_key_encrypted: str | None = None,
 ) -> None:
-    """Background task that runs Gemini 2.5 Flash OCR and stores extracted Arabic/English text."""
+    """Background task that runs Gemini 2.5 Flash extraction and stores searchable text."""
     async with SessionLocal() as session:
         doc = await session.get(Document, document_id)
-        if not doc:
+        if not doc or doc.deleted_at is not None:
             return
         try:
             doc.processing_status = "processing"
@@ -114,19 +114,19 @@ async def run_ocr_background(
             doc.processing_error = None
         except AllGeminiKeysExhausted:
             doc.processing_status = "queued"
-            doc.processing_error = "All OCR keys exhausted; awaiting retry"
+            doc.processing_error = "Extraction keys currently rate limited; awaiting retry"
         except GeminiRequestFailed:
             doc.processing_status = "failed"
-            doc.processing_error = "OCR provider error; administrator review required"
+            doc.processing_error = "Text extraction provider error; administrator review required"
         except Exception as exc:
-            logger.warning("Background OCR failed for document %s (%s)", document_id, type(exc).__name__)
+            logger.warning("Background extraction failed for document %s (%s)", document_id, type(exc).__name__)
             doc.processing_status = "failed"
-            doc.processing_error = "Background OCR processing failed"
+            doc.processing_error = "Background text extraction failed"
         await session.commit()
 
 
 async def run_ocr_batch_background(document_jobs: list[tuple[uuid.UUID, str, str, str | None]]) -> None:
-    """Sequentially re-index queued documents in the background without overwhelming API quotas."""
+    """Sequentially re-index queued documents in the background without overwhelming quotas."""
     for doc_id, storage_key, mime_type, user_key_encrypted in document_jobs:
         await run_ocr_background(doc_id, storage_key, mime_type, user_key_encrypted)
 
@@ -166,7 +166,7 @@ async def upload_document(
             folder = await db.get(Folder, uuid.UUID(folder_id))
         except ValueError:
             raise HTTPException(422, "Invalid folder id")
-        if not folder:
+        if not folder or folder.deleted_at is not None:
             raise HTTPException(404, "Folder not found")
         allowed = (
             folder.owner_id == user.id
@@ -231,14 +231,16 @@ async def upload_document(
     )
     await db.commit()
 
-    # Schedule Gemini 2.5 Flash OCR text extraction in background
     background_tasks.add_task(run_ocr_background, did, key, file.content_type, user.gemini_key_encrypted)
 
     breadcrumbs = await build_folder_breadcrumbs(db)
     folder_breadcrumb, folder_path = format_document_path(doc.folder_id, name, breadcrumbs)
+    owner_name = (user.full_name or "").strip() or user.username
     return {
         "id": str(did),
         "file_name": name,
+        "mime_type": doc.mime_type,
+        "file_size": doc.file_size,
         "status": doc.processing_status,
         "extracted_text": doc.extracted_text or "",
         "summary": doc.summary,
@@ -248,6 +250,12 @@ async def upload_document(
         "folder_id": str(doc.folder_id) if doc.folder_id else None,
         "folder_breadcrumb": folder_breadcrumb,
         "folder_path": folder_path,
+        "owner_id": str(user.id),
+        "owner_name": owner_name,
+        "owner_username": user.username,
+        "owner_job_title": user.job_title,
+        "can_manage": True,
+        "created_at": doc.created_at,
         "metadata": doc.metadata_json,
     }
 
@@ -260,6 +268,7 @@ async def list_documents(
     mime_type: str | None = None,
     classification: str | None = None,
     folder_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
     root_only: bool = False,
     from_date: str | None = None,
     to_date: str | None = None,
@@ -268,7 +277,15 @@ async def list_documents(
 ):
     if not 1 <= limit <= 250:
         raise HTTPException(422, "Limit must be 1-250")
-    q = select(Document).where(_visible_to(user))
+    vis_clause = await build_document_visibility_clause(user, db)
+    q = select(Document).where(vis_clause)
+
+    if owner_id:
+        visible_owners = await get_visible_owner_ids(user, db)
+        if visible_owners is not None and owner_id not in visible_owners:
+            return []
+        q = q.where(Document.user_id == owner_id)
+
     if department:
         q = q.where(Document.department == department)
     if mime_type:
@@ -293,9 +310,13 @@ async def list_documents(
         q = q.where(Document.keywords.contains([keyword]))
     rows = (await db.scalars(q.order_by(Document.created_at.desc()).limit(limit))).all()
     breadcrumbs = await build_folder_breadcrumbs(db)
+    owner_map = await build_user_display_map(db, {d.user_id for d in rows})
+
     results = []
     for d in rows:
         folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
+        owner_info = owner_map.get(d.user_id)
+        can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
         results.append(
             {
                 "id": str(d.id),
@@ -312,6 +333,11 @@ async def list_documents(
                 "folder_id": str(d.folder_id) if d.folder_id else None,
                 "folder_breadcrumb": folder_breadcrumb,
                 "folder_path": folder_path,
+                "owner_id": str(d.user_id),
+                "owner_name": owner_info["display_name"] if owner_info else None,
+                "owner_username": owner_info["username"] if owner_info else None,
+                "owner_job_title": owner_info["job_title"] if owner_info else None,
+                "can_manage": can_manage,
                 "created_at": d.created_at,
             }
         )
@@ -325,11 +351,15 @@ async def document_details(
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
 ):
-    doc = await db.scalar(select(Document).where(Document.id == document_id, _visible_to(user)))
+    vis_clause = await build_document_visibility_clause(user, db)
+    doc = await db.scalar(select(Document).where(Document.id == document_id, vis_clause))
     if not doc:
         raise HTTPException(404, "Document not found")
     breadcrumbs = await build_folder_breadcrumbs(db)
     folder_breadcrumb, folder_path = format_document_path(doc.folder_id, doc.file_name, breadcrumbs)
+    owner_map = await build_user_display_map(db, {doc.user_id})
+    owner_info = owner_map.get(doc.user_id)
+    can_manage = await _can_write_doc(doc, user, db)
     db.add(
         AuditLog(
             actor_id=user.id,
@@ -355,6 +385,11 @@ async def document_details(
         "folder_id": str(doc.folder_id) if doc.folder_id else None,
         "folder_breadcrumb": folder_breadcrumb,
         "folder_path": folder_path,
+        "owner_id": str(doc.user_id),
+        "owner_name": owner_info["display_name"] if owner_info else None,
+        "owner_username": owner_info["username"] if owner_info else None,
+        "owner_job_title": owner_info["job_title"] if owner_info else None,
+        "can_manage": can_manage,
         "metadata": doc.metadata_json,
         "status": doc.processing_status,
         "created_at": doc.created_at,
@@ -370,7 +405,7 @@ async def edit_document(
     request: Request,
 ):
     doc = await db.get(Document, document_id)
-    if not doc:
+    if not doc or doc.deleted_at is not None:
         raise HTTPException(404, "Document not found")
     if not await _can_write_doc(doc, user, db):
         raise HTTPException(403, "You cannot edit this document")
@@ -379,34 +414,44 @@ async def edit_document(
     for key, value in payload.items():
         if key not in allowed:
             raise HTTPException(422, f"Field cannot be edited: {key}")
-        if key == "folder_id" and value:
-            try:
-                fid = uuid.UUID(value)
-            except Exception:
-                raise HTTPException(422, "Invalid folder id")
-            folder = await db.get(Folder, fid)
-            if not folder:
-                raise HTTPException(404, "Folder not found")
-            if (
-                folder.owner_id != user.id
-                and user.role != UserRole.ADMIN
-                and not await db.scalar(
-                    select(FolderGrant.id).where(
-                        FolderGrant.folder_id == fid,
-                        FolderGrant.user_id == user.id,
-                        FolderGrant.permission == "write",
+        if key == "folder_id":
+            if not value:
+                doc.folder_id = None
+            else:
+                try:
+                    fid = uuid.UUID(str(value))
+                except Exception:
+                    raise HTTPException(422, "Invalid folder id")
+                folder = await db.get(Folder, fid)
+                if not folder or folder.deleted_at is not None:
+                    raise HTTPException(404, "Folder not found")
+                if (
+                    folder.owner_id != user.id
+                    and user.role != UserRole.ADMIN
+                    and not await db.scalar(
+                        select(FolderGrant.id).where(
+                            FolderGrant.folder_id == fid,
+                            FolderGrant.user_id == user.id,
+                            FolderGrant.permission == "write",
+                        )
                     )
-                )
-            ):
-                raise HTTPException(403, "Write access required")
-            doc.folder_id = fid
-            folder.updated_at = datetime.now(timezone.utc)
-        else:
-            if key == "keywords" and (
-                not isinstance(value, list) or len(value) > 50 or not all(isinstance(item, str) and len(item) <= 80 for item in value)
-            ):
+                ):
+                    raise HTTPException(403, "Write access to target folder required")
+                doc.folder_id = fid
+                folder.updated_at = datetime.now(timezone.utc)
+        elif key == "file_name":
+            if not isinstance(value, str) or not value.strip():
+                raise HTTPException(422, "file_name cannot be empty")
+            doc.file_name = value.strip().replace("/", "_").replace("\\", "_")[:250]
+        elif key == "keywords":
+            if not isinstance(value, list) or len(value) > 50 or not all(isinstance(item, str) and len(item) <= 80 for item in value):
                 raise HTTPException(422, "keywords must be a list of up to 50 short strings")
-            setattr(doc, key, value)
+            doc.keywords = [item.strip() for item in value if item.strip()]
+        else:
+            if value is not None and not isinstance(value, str):
+                raise HTTPException(422, f"Invalid value for {key}")
+            cleaned = value.strip() if isinstance(value, str) else None
+            setattr(doc, key, cleaned or None)
         changes.append(key)
     if "keywords" in changes:
         doc.metadata_json = {**(doc.metadata_json or {}), "keywords": doc.keywords}
@@ -424,12 +469,18 @@ async def edit_document(
         )
     )
     await db.commit()
+    breadcrumbs = await build_folder_breadcrumbs(db)
+    folder_breadcrumb, folder_path = format_document_path(doc.folder_id, doc.file_name, breadcrumbs)
     return {
         "id": str(doc.id),
         "file_name": doc.file_name,
         "classification": doc.classification,
         "department": doc.department,
+        "summary": doc.summary,
         "keywords": doc.keywords,
+        "folder_id": str(doc.folder_id) if doc.folder_id else None,
+        "folder_breadcrumb": folder_breadcrumb,
+        "folder_path": folder_path,
     }
 
 
@@ -440,30 +491,26 @@ async def delete_document(
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
 ):
+    """Soft-delete document by moving it to the Recycle Bin."""
     doc = await db.get(Document, document_id)
-    if not doc:
+    if not doc or doc.deleted_at is not None:
         raise HTTPException(404, "Document not found")
     if not await _can_write_doc(doc, user, db):
         raise HTTPException(403, "You cannot delete this document")
-    name = doc.file_name
-    key = doc.file_path
+    doc.deleted_at = datetime.now(timezone.utc)
+    doc.deleted_by = user.id
     db.add(
         AuditLog(
             actor_id=user.id,
-            action="document.deleted",
+            action="document.trashed",
             resource_type="document",
             resource_id=str(doc.id),
-            detail={"file_name": name},
+            detail={"file_name": doc.file_name},
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )
     )
-    await db.delete(doc)
     await db.commit()
-    try:
-        await get_storage().delete(key)
-    except Exception:
-        pass
     return Response(status_code=204)
 
 
@@ -474,7 +521,8 @@ async def retrieve_document(
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
 ):
-    doc = await db.scalar(select(Document).where(Document.id == document_id, _visible_to(user)))
+    vis_clause = await build_document_visibility_clause(user, db)
+    doc = await db.scalar(select(Document).where(Document.id == document_id, vis_clause))
     if not doc:
         raise HTTPException(404, "Document not found")
     try:

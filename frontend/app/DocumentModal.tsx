@@ -1,29 +1,403 @@
 'use client';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
+import { AppIcon } from './BrandMark';
 import PasswordInput from './components/PasswordInput';
+import type { LocaleCode } from './components/types';
+import { getDirection, getTranslations } from './lib/i18n';
 
-type Doc={id:string;file_name:string;mime_type?:string;objectUrl:string;extracted_text?:string;summary?:string;classification?:string;department?:string;keywords?:string[]};
-const words:Record<string,Record<string,string>>={
- ar:{preview:'معاينة',text:'النص المستخرج',chat:'اسأل المستند',share:'مشاركة آمنة',close:'إغلاق',copy:'نسخ النص',copied:'تم النسخ',question:'اكتب سؤالك عن المستند…',send:'إرسال',password:'كلمة مرور للرابط',expiry:'صلاحية الرابط',create:'إنشاء رابط',hours:'ساعة',days:'يوم',copyLink:'نسخ الرابط',answer:'الإجابة',summary:'الملخص',keywords:'الكلمات المفتاحية',department:'القسم',classify:'التصنيف',empty:'لا يوجد نص مستخرج.',shareHelp:'شارك الرابط وكلمة المرور عبر قناتين منفصلتين.',passwordRequired:'كلمة المرور مطلوبة (6 أحرف على الأقل مثل ab1234).',error:'تعذر تنفيذ الطلب.'},
- en:{preview:'Preview',text:'Extracted text',chat:'Ask document',share:'Secure share',close:'Close',copy:'Copy text',copied:'Copied',question:'Ask a question about this file…',send:'Send',password:'Link password',expiry:'Link expiry',create:'Create link',hours:'hours',days:'days',copyLink:'Copy link',answer:'Answer',summary:'Summary',keywords:'Keywords',department:'Department',classify:'Classification',empty:'No extracted text.',shareHelp:'Share the link and password through separate channels.',passwordRequired:'Password is required (6 characters minimum, e.g. ab1234).',error:'The request could not be completed.'},
- fr:{preview:'Aperçu',text:'Texte extrait',chat:'Interroger',share:'Partage sécurisé',close:'Fermer',copy:'Copier le texte',copied:'Copié',question:'Posez une question sur ce fichier…',send:'Envoyer',password:'Mot de passe du lien',expiry:'Expiration du lien',create:'Créer le lien',hours:'heures',days:'jours',copyLink:'Copier le lien',answer:'Réponse',summary:'Résumé',keywords:'Mots-clés',department:'Service',classify:'Classification',empty:'Aucun texte extrait.',shareHelp:'Partagez le lien et le mot de passe par des canaux distincts.',passwordRequired:'Mot de passe requis (6 caractères minimum).',error:'La requête a échoué.'},
- es:{preview:'Vista previa',text:'Texto extraído',chat:'Preguntar al documento',share:'Compartir seguro',close:'Cerrar',copy:'Copiar texto',copied:'Copiado',question:'Pregunta sobre este archivo…',send:'Enviar',password:'Contraseña del enlace',expiry:'Caducidad',create:'Crear enlace',hours:'horas',days:'días',copyLink:'Copiar enlace',answer:'Respuesta',summary:'Resumen',keywords:'Palabras clave',department:'Departamento',classify:'Clasificación',empty:'No hay texto extraído.',shareHelp:'Comparte el enlace y la contraseña por canales separados.',passwordRequired:'Se requiere contraseña (mínimo 6 caracteres).',error:'No se pudo completar la solicitud.'},
- tr:{preview:'Önizleme',text:'Çıkarılan metin',chat:'Belgeye sor',share:'Güvenli paylaşım',close:'Kapat',copy:'Metni kopyala',copied:'Kopyalandı',question:'Bu belge hakkında soru sorun…',send:'Gönder',password:'Bağlantı parolası',expiry:'Bağlantı süresi',create:'Bağlantı oluştur',hours:'saat',days:'gün',copyLink:'Bağlantıyı kopyala',answer:'Yanıt',summary:'Özet',keywords:'Anahtar kelimeler',department:'Departman',classify:'Sınıflandırma',empty:'Çıkarılan metin yok.',shareHelp:'Bağlantıyı ve parolayı ayrı kanallardan paylaşın.',passwordRequired:'Parola gerekli (en az 6 karakter).',error:'İstek tamamlanamadı.'},
- de:{preview:'Vorschau',text:'Extrahierter Text',chat:'Dokument fragen',share:'Sicher teilen',close:'Schließen',copy:'Text kopieren',copied:'Kopiert',question:'Frage zu diesem Dokument…',send:'Senden',password:'Link-Passwort',expiry:'Link-Gültigkeit',create:'Link erstellen',hours:'Stunden',days:'Tage',copyLink:'Link kopieren',answer:'Antwort',summary:'Zusammenfassung',keywords:'Schlüsselwörter',department:'Abteilung',classify:'Klassifizierung',empty:'Kein extrahierter Text.',shareHelp:'Link und Passwort über getrennte Kanäle teilen.',passwordRequired:'Passwort erforderlich (mindestens 6 Zeichen).',error:'Anfrage fehlgeschlagen.'},
- ru:{preview:'Просмотр',text:'Распознанный текст',chat:'Спросить документ',share:'Безопасная ссылка',close:'Закрыть',copy:'Копировать текст',copied:'Скопировано',question:'Задайте вопрос по документу…',send:'Отправить',password:'Пароль ссылки',expiry:'Срок действия',create:'Создать ссылку',hours:'часов',days:'дней',copyLink:'Копировать ссылку',answer:'Ответ',summary:'Краткое описание',keywords:'Ключевые слова',department:'Отдел',classify:'Категория',empty:'Распознанный текст отсутствует.',shareHelp:'Передавайте ссылку и пароль разными каналами.',passwordRequired:'Нужен пароль (не менее 6 символов).',error:'Не удалось выполнить запрос.'},
- zh:{preview:'预览',text:'识别文本',chat:'询问文档',share:'安全分享',close:'关闭',copy:'复制文本',copied:'已复制',question:'询问此文档…',send:'发送',password:'分享密码',expiry:'链接有效期',create:'创建链接',hours:'小时',days:'天',copyLink:'复制链接',answer:'回答',summary:'摘要',keywords:'关键词',department:'部门',classify:'分类',empty:'暂无识别文本。',shareHelp:'请通过不同渠道发送链接和密码。',passwordRequired:'请设置密码（至少 6 个字符）。',error:'请求未能完成。'},
- ja:{preview:'プレビュー',text:'抽出テキスト',chat:'文書に質問',share:'安全な共有',close:'閉じる',copy:'テキストをコピー',copied:'コピーしました',question:'この文書について質問…',send:'送信',password:'リンクのパスワード',expiry:'リンクの有効期限',create:'リンクを作成',hours:'時間',days:'日',copyLink:'リンクをコピー',answer:'回答',summary:'概要',keywords:'キーワード',department:'部署',classify:'分類',empty:'抽出テキストはありません。',shareHelp:'リンクとパスワードは別々の方法で共有してください。',passwordRequired:'パスワードが必要です（6文字以上）。',error:'リクエストに失敗しました。'},
- hi:{preview:'पूर्वावलोकन',text:'निकाला गया पाठ',chat:'दस्तावेज़ से पूछें',share:'सुरक्षित साझा करें',close:'बंद करें',copy:'पाठ कॉपी करें',copied:'कॉपी हुआ',question:'इस दस्तावेज़ के बारे में पूछें…',send:'भेजें',password:'लिंक पासवर्ड',expiry:'लिंक की अवधि',create:'लिंक बनाएँ',hours:'घंटे',days:'दिन',copyLink:'लिंक कॉपी करें',answer:'उत्तर',summary:'सारांश',keywords:'कीवर्ड',department:'विभाग',classify:'वर्गीकरण',empty:'निकाला गया पाठ उपलब्ध नहीं।',shareHelp:'लिंक और पासवर्ड अलग-अलग माध्यमों से साझा करें।',passwordRequired:'पासवर्ड आवश्यक है (कम से कम 6 अक्षर)।',error:'अनुरोध पूरा नहीं हो सका।'},
- ur:{preview:'پیش منظر',text:'نکالا گیا متن',chat:'دستاویز سے سوال',share:'محفوظ شیئرنگ',close:'بند کریں',copy:'متن کاپی کریں',copied:'کاپی ہوگیا',question:'اس دستاویز کے بارے میں پوچھیں…',send:'بھیجیں',password:'لنک پاس ورڈ',expiry:'لنک کی مدت',create:'لنک بنائیں',hours:'گھنٹے',days:'دن',copyLink:'لنک کاپی کریں',answer:'جواب',summary:'خلاصہ',keywords:'کلیدی الفاظ',department:'شعبہ',classify:'درجہ بندی',empty:'نکالا گیا متن دستیاب نہیں۔',shareHelp:'لنک اور پاس ورڈ الگ ذرائع سے بھیجیں۔',passwordRequired:'پاس ورڈ ضروری ہے (کم از کم 6 حروف)۔',error:'درخواست مکمل نہیں ہوسکی.'}
+type PreviewDoc = {
+  id: string;
+  file_name: string;
+  mime_type?: string;
+  objectUrl: string;
+  extracted_text?: string;
+  summary?: string;
+  classification?: string;
+  department?: string;
+  owner_name?: string | null;
+  keywords?: string[];
 };
-export default function DocumentModal({doc,token,language,onClose}:{doc:Doc;token:string;language:string;onClose:()=>void}){
- const t=words[language]||words.en;const [tab,setTab]=useState<'preview'|'chat'|'share'>('preview');const [question,setQuestion]=useState(''),[history,setHistory]=useState<{q:string;a:string}[]>([]),[busy,setBusy]=useState(false),[sharePassword,setSharePassword]=useState(''),[expiry,setExpiry]=useState('24'),[shareUrl,setShareUrl]=useState(''),[notice,setNotice]=useState('');
- const auth={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
- async function ask(e:FormEvent){e.preventDefault();if(!question.trim())return;setBusy(true);try{const r=await fetch(`/api/v1/documents/${doc.id}/chat`,{method:'POST',headers:auth,body:JSON.stringify({question}),cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||t.error);setHistory(v=>[...v,{q:question,a:d.answer}]);setQuestion('')}catch(e:any){setNotice(e.message||t.error)}finally{setBusy(false)}}
- async function createShare(e:FormEvent){e.preventDefault();setBusy(true);try{const r=await fetch(`/api/v1/documents/${doc.id}/share`,{method:'POST',headers:auth,body:JSON.stringify({password:sharePassword,expires_in_hours:Number(expiry)}),cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||t.error);setShareUrl(`${window.location.origin}/shared#${encodeURIComponent(d.share_token)}`);setNotice('')}catch(e:any){setNotice(e.message||t.error)}finally{setBusy(false)}}
- const isPdf=doc.mime_type==='application/pdf';
- return <div className="fixed inset-0 z-[70] bg-slate-950/55 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><section className="w-full max-w-7xl h-[94vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"><header className="h-16 shrink-0 border-b flex items-center justify-between px-4 sm:px-6"><div className="min-w-0"><h2 className="font-bold truncate">{doc.file_name}</h2><p className="text-[11px] text-slate-500 mt-1">{doc.classification||'—'} · {doc.department||'—'}</p></div><div className="flex items-center gap-2"><button onClick={onClose} className="btn btn-muted">{t.close} ×</button></div></header><div className="flex items-center gap-1 px-4 border-b bg-slate-50/70">{(['preview','chat','share'] as const).map(k=><button key={k} onClick={()=>{setTab(k);setNotice('')}} className={`px-4 py-3 text-sm border-b-2 ${tab===k?'border-sky-500 text-sky-700 font-bold':'border-transparent text-slate-500'}`}>{t[k]}</button>)}</div>{notice&&<div className="mx-4 mt-3 rounded-lg bg-rose-50 text-rose-700 p-3 text-sm">{notice}</div>}
- {tab==='preview'&&<div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]"><div className="bg-slate-100 min-h-0 p-2 sm:p-4">{isPdf?<iframe title={doc.file_name} src={doc.objectUrl} className="w-full h-full min-h-[40vh] rounded-lg bg-white"/>:<img src={doc.objectUrl} alt={doc.file_name} className="w-full h-full object-contain rounded-lg"/>}</div><aside className="border-t lg:border-t-0 lg:border-l min-h-0 flex flex-col"><div className="p-4 border-b flex justify-between items-center"><div><b>{t.summary}</b><p className="text-sm text-slate-600 mt-1">{doc.summary||'—'}</p><div className="flex flex-wrap gap-1 mt-2">{(doc.keywords||[]).map(k=><span key={k} className="rounded-full bg-sky-50 text-sky-700 px-2 py-1 text-[10px]">{k}</span>)}</div></div><button className="btn btn-muted text-xs" onClick={async()=>{await navigator.clipboard.writeText(doc.extracted_text||'');setNotice(t.copied);setTimeout(()=>setNotice(''),1800)}}>{t.copy}</button></div><div className="p-4 overflow-auto select-text whitespace-pre-wrap leading-7 text-sm text-slate-800" dir="auto">{doc.extracted_text||t.empty}</div></aside></div>}
- {tab==='chat'&&<div className="flex-1 min-h-0 flex flex-col max-w-4xl w-full mx-auto p-4"><div className="flex-1 overflow-y-auto space-y-4">{!history.length&&<div className="h-full grid place-items-center text-slate-400">{t.question}</div>}{history.map((m,i)=><div key={i} className="space-y-2"><div className="bg-sky-50 rounded-xl p-3 text-sm font-semibold">{m.q}</div><div className="bg-slate-50 rounded-xl p-4 text-sm whitespace-pre-wrap leading-7">{m.a}</div></div>)}</div><form onSubmit={ask} className="flex gap-2 pt-3 border-t"><input className="field" value={question} onChange={e=>setQuestion(e.target.value)} placeholder={t.question}/><button className="btn btn-primary" disabled={busy||!question.trim()}>{busy?'…':t.send}</button></form></div>}
- {tab==='share'&&<div className="flex-1 p-5 sm:p-8 max-w-2xl"><p className="text-sm text-slate-500">{t.shareHelp}</p><form onSubmit={createShare} className="mt-6 space-y-4"><label className="block text-sm font-semibold">{t.password}<PasswordInput wrapperClassName="mt-2" minLength={6} required value={sharePassword} onChange={e=>setSharePassword(e.target.value)} placeholder="ab1234"/></label><label className="block text-sm font-semibold">{t.expiry}<select className="field mt-2" value={expiry} onChange={e=>setExpiry(e.target.value)}><option value="24">24 {t.hours}</option><option value="168">7 {t.days}</option><option value="720">30 {t.days}</option></select></label><button className="btn btn-primary" disabled={busy}>{busy?'…':t.create}</button></form>{shareUrl&&<div className="mt-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200"><label className="text-xs block mb-2">{t.copyLink}</label><div className="flex gap-2"><input className="field text-xs" readOnly value={shareUrl}/><button className="btn btn-muted" onClick={()=>navigator.clipboard.writeText(shareUrl)}>{t.copyLink}</button></div></div>}</div>}</section></div>
+
+export default function DocumentModal({
+  doc,
+  token,
+  language,
+  onDownload,
+  onClose,
+}: {
+  doc: PreviewDoc;
+  token: string;
+  language: LocaleCode;
+  onDownload?: () => void;
+  onClose: () => void;
+}) {
+  const t = getTranslations(language);
+  const dir = getDirection(language);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const [tab, setTab] = useState<'preview' | 'text' | 'chat' | 'share'>('preview');
+  const [question, setQuestion] = useState('');
+  const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [sharePassword, setSharePassword] = useState('');
+  const [expiry, setExpiry] = useState('24');
+  const [shareUrl, setShareUrl] = useState('');
+  const [notice, setNotice] = useState('');
+  const [copiedNotice, setCopiedNotice] = useState('');
+
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const isPdf = doc.mime_type === 'application/pdf';
+
+  function handlePrint() {
+    if (isPdf && iframeRef.current?.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.focus();
+        iframeRef.current.contentWindow.print();
+        return;
+      } catch {
+        // fallback below
+      }
+    }
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        if (printFrame.parentNode) printFrame.parentNode.removeChild(printFrame);
+      }, 1500);
+    };
+
+    if (isPdf) {
+      printFrame.onload = () => {
+        try {
+          printFrame.contentWindow?.focus();
+          printFrame.contentWindow?.print();
+        } finally {
+          cleanup();
+        }
+      };
+      printFrame.src = doc.objectUrl;
+    } else {
+      const fDoc = printFrame.contentDocument;
+      if (fDoc) {
+        fDoc.open();
+        fDoc.close();
+        const img = fDoc.createElement('img');
+        img.src = doc.objectUrl;
+        img.alt = doc.file_name;
+        img.style.maxWidth = '100%';
+        img.style.display = 'block';
+        img.style.margin = '0 auto';
+        img.onload = () => {
+          try {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+          } finally {
+            cleanup();
+          }
+        };
+        fDoc.body.style.margin = '0';
+        fDoc.body.appendChild(img);
+      } else {
+        cleanup();
+      }
+    }
+  }
+
+  function handleLocalDownload() {
+    if (onDownload) {
+      onDownload();
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = doc.objectUrl;
+    a.download = doc.file_name || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function ask(e: FormEvent) {
+    e.preventDefault();
+    if (!question.trim()) return;
+    setBusy(true);
+    setNotice('');
+    try {
+      const r = await fetch(`/api/v1/documents/${doc.id}/chat`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ question }),
+        cache: 'no-store',
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || t.errorGeneric);
+      setHistory((v) => [...v, { q: question, a: d.answer }]);
+      setQuestion('');
+    } catch (e: any) {
+      setNotice(e.message || t.errorGeneric);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createShare(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setNotice('');
+    try {
+      const r = await fetch(`/api/v1/documents/${doc.id}/share`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ password: sharePassword, expires_in_hours: Number(expiry) }),
+        cache: 'no-store',
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || t.errorGeneric);
+      setShareUrl(`${window.location.origin}/shared#${encodeURIComponent(d.share_token)}`);
+    } catch (e: any) {
+      setNotice(e.message || t.errorGeneric);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      dir={dir}
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[80] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <section className="w-full max-w-6xl h-[92vh] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Top Action Toolbar: Title + Download + Print + Close */}
+        <header className="shrink-0 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+              {doc.file_name}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+              {[doc.owner_name, doc.classification, doc.department].filter(Boolean).join(' · ') || '—'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleLocalDownload}
+              className="btn btn-muted text-xs py-2 px-3"
+              title={t.download}
+            >
+              <AppIcon name="download" size={15} />
+              <span className="hidden sm:inline">{t.download}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="btn btn-muted text-xs py-2 px-3"
+              title={t.print}
+            >
+              <AppIcon name="printer" size={15} />
+              <span className="hidden sm:inline">{t.print}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-muted text-xs py-2 px-3"
+              aria-label={t.close}
+            >
+              <AppIcon name="x" size={15} />
+              <span className="hidden sm:inline">{t.close}</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Sub-navigation Tabs */}
+        <div className="flex items-center gap-1 px-4 sm:px-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 overflow-x-auto">
+          {(
+            [
+              ['preview', t.preview],
+              ['text', t.extractedText],
+              ['chat', t.askDocument],
+              ['share', t.secureShare],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                setTab(key);
+                setNotice('');
+              }}
+              className={`px-3.5 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                tab === key
+                  ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {notice && (
+          <div className="mx-4 mt-3 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 px-3.5 py-2.5 text-xs font-medium">
+            {notice}
+          </div>
+        )}
+
+        {/* Instant Preview Tab */}
+        {tab === 'preview' && (
+          <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-950 p-3 sm:p-5 flex items-center justify-center overflow-auto">
+            {isPdf ? (
+              <iframe
+                ref={iframeRef}
+                title={doc.file_name}
+                src={doc.objectUrl}
+                className="w-full h-full min-h-[60vh] rounded-xl bg-white border border-slate-200 dark:border-slate-800"
+              />
+            ) : (
+              <img
+                src={doc.objectUrl}
+                alt={doc.file_name}
+                referrerPolicy="no-referrer"
+                className="max-w-full max-h-full object-contain rounded-xl shadow-sm bg-white dark:bg-slate-900"
+              />
+            )}
+          </div>
+        )}
+
+        {/* Extracted Text & Metadata Tab */}
+        {tab === 'text' && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                {doc.summary && (
+                  <p className="text-sm text-slate-700 dark:text-slate-200">{doc.summary}</p>
+                )}
+                {doc.keywords && doc.keywords.length > 0 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {doc.keywords.join(' · ')}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn-muted text-xs py-1.5 px-3 shrink-0"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(doc.extracted_text || '');
+                  setCopiedNotice(t.copied);
+                  window.setTimeout(() => setCopiedNotice(''), 1800);
+                }}
+              >
+                {copiedNotice || t.copyText}
+              </button>
+            </div>
+            <div
+              className="flex-1 p-5 overflow-auto select-text whitespace-pre-wrap leading-7 text-sm text-slate-800 dark:text-slate-200"
+              dir="auto"
+            >
+              {doc.extracted_text || t.noExtractedText}
+            </div>
+          </div>
+        )}
+
+        {/* Ask Document Tab */}
+        {tab === 'chat' && (
+          <div className="flex-1 min-h-0 flex flex-col max-w-4xl w-full mx-auto p-4 sm:p-5">
+            <div className="flex-1 overflow-y-auto space-y-3.5">
+              {!history.length && (
+                <div className="h-full grid place-items-center text-sm text-slate-400 dark:text-slate-500">
+                  {t.askPlaceholder}
+                </div>
+              )}
+              {history.map((m, i) => (
+                <div key={i} className="space-y-2">
+                  <div className="bg-blue-50 dark:bg-blue-950/50 text-slate-900 dark:text-slate-100 rounded-xl px-4 py-3 text-sm font-medium">
+                    {m.q}
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800/70 text-slate-800 dark:text-slate-200 rounded-xl px-4 py-3 text-sm whitespace-pre-wrap leading-7">
+                    {m.a}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <form onSubmit={ask} className="flex gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <input
+                className="field"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder={t.askPlaceholder}
+              />
+              <button type="submit" className="btn btn-primary" disabled={busy || !question.trim()}>
+                {busy ? '…' : t.send}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Secure Share Tab */}
+        {tab === 'share' && (
+          <div className="flex-1 overflow-y-auto p-5 sm:p-8 max-w-xl">
+            <p className="text-sm text-slate-500 dark:text-slate-400">{t.shareHelp}</p>
+            <form onSubmit={createShare} className="mt-5 space-y-4">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t.linkPassword}
+                <PasswordInput
+                  wrapperClassName="mt-1.5"
+                  minLength={6}
+                  required
+                  value={sharePassword}
+                  onChange={(e) => setSharePassword(e.target.value)}
+                  placeholder="ab1234"
+                  showLabel={t.showPassword}
+                  hideLabel={t.hidePassword}
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t.linkExpiry}
+                <select
+                  className="field mt-1.5"
+                  value={expiry}
+                  onChange={(e) => setExpiry(e.target.value)}
+                >
+                  <option value="24">24 {t.hours}</option>
+                  <option value="168">7 {t.days}</option>
+                  <option value="720">30 {t.days}</option>
+                </select>
+              </label>
+              <button type="submit" className="btn btn-primary text-xs" disabled={busy}>
+                {busy ? '…' : t.createLink}
+              </button>
+            </form>
+            {shareUrl && (
+              <div className="mt-6 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70">
+                <label className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 block mb-2">
+                  {t.copyLink}
+                </label>
+                <div className="flex gap-2">
+                  <input className="field text-xs" dir="ltr" readOnly value={shareUrl} />
+                  <button
+                    type="button"
+                    className="btn btn-muted text-xs shrink-0"
+                    onClick={() => navigator.clipboard.writeText(shareUrl)}
+                  >
+                    {t.copyLink}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }

@@ -7,11 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import (
+    build_document_visibility_clause,
+    build_user_display_map,
+    get_visible_owner_ids,
+)
 from app.api.deps import current_user
 from app.api.documents import build_folder_breadcrumbs, format_document_path
 from app.db import get_db
 from app.models.document import Document
-from app.models.folder import FolderGrant
 from app.models.user import User, UserRole
 
 router = APIRouter()
@@ -53,15 +57,20 @@ async def search_documents(
     mime_type: str | None = None,
     classification: str | None = None,
     folder_id: UUID | None = None,
+    owner_id: UUID | None = None,
     keyword: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ):
-    query = select(Document)
-    if user.role != UserRole.ADMIN:
-        granted = select(FolderGrant.folder_id).where(FolderGrant.user_id == user.id)
-        query = query.where(or_(Document.user_id == user.id, Document.folder_id.in_(granted)))
+    vis_clause = await build_document_visibility_clause(user, db)
+    query = select(Document).where(vis_clause)
+
+    if owner_id:
+        visible_owners = await get_visible_owner_ids(user, db)
+        if visible_owners is not None and owner_id not in visible_owners:
+            return []
+        query = query.where(Document.user_id == owner_id)
 
     cleaned_q = q.strip() if q else ""
     if cleaned_q:
@@ -110,10 +119,13 @@ async def search_documents(
             "StartSel=⟦, StopSel=⟧, MaxWords=34, MinWords=12",
         )
         pairs = (await db.execute(query.add_columns(headline.label("hit_snippet")).limit(limit))).all()
+        owner_map = await build_user_display_map(db, {d.user_id for d, _ in pairs})
         results = []
         for d, hit_snippet in pairs:
             folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
             snippet = _build_highlighted_snippet(d.extracted_text, cleaned_q, hit_snippet) or (d.summary or "")
+            owner_info = owner_map.get(d.user_id)
+            can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
             results.append(
                 {
                     "id": str(d.id),
@@ -129,15 +141,23 @@ async def search_documents(
                     "folder_id": str(d.folder_id) if d.folder_id else None,
                     "folder_breadcrumb": folder_breadcrumb,
                     "folder_path": folder_path,
+                    "owner_id": str(d.user_id),
+                    "owner_name": owner_info["display_name"] if owner_info else None,
+                    "owner_username": owner_info["username"] if owner_info else None,
+                    "owner_job_title": owner_info["job_title"] if owner_info else None,
+                    "can_manage": can_manage,
                     "created_at": d.created_at,
                 }
             )
         return results
 
     rows = (await db.scalars(query.order_by(Document.created_at.desc()).limit(limit))).all()
+    owner_map = await build_user_display_map(db, {d.user_id for d in rows})
     results = []
     for d in rows:
         folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
+        owner_info = owner_map.get(d.user_id)
+        can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
         results.append(
             {
                 "id": str(d.id),
@@ -153,6 +173,11 @@ async def search_documents(
                 "folder_id": str(d.folder_id) if d.folder_id else None,
                 "folder_breadcrumb": folder_breadcrumb,
                 "folder_path": folder_path,
+                "owner_id": str(d.user_id),
+                "owner_name": owner_info["display_name"] if owner_info else None,
+                "owner_username": owner_info["username"] if owner_info else None,
+                "owner_job_title": owner_info["job_title"] if owner_info else None,
+                "can_manage": can_manage,
                 "created_at": d.created_at,
             }
         )

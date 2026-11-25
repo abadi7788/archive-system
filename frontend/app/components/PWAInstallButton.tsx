@@ -6,7 +6,19 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-export default function PWAInstallButton({ compact = false, dark = false }: { compact?: boolean; dark?: boolean }) {
+export default function PWAInstallButton({
+  compact = false,
+  dark = false,
+  label = 'تثبيت التطبيق',
+  closeLabel = 'حسناً',
+  dir = 'rtl',
+}: {
+  compact?: boolean;
+  dark?: boolean;
+  label?: string;
+  closeLabel?: string;
+  dir?: 'rtl' | 'ltr';
+}) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -70,20 +82,30 @@ export default function PWAInstallButton({ compact = false, dark = false }: { co
         onClick={handleInstall}
         className={
           dark
-            ? 'w-full flex items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-500/15 px-3 py-2.5 text-xs font-bold text-sky-100 hover:bg-sky-500/25 transition-colors'
+            ? 'w-full flex items-center justify-center gap-2 rounded-lg border border-blue-400/25 bg-blue-500/15 px-3 py-2 text-xs font-semibold text-blue-100 hover:bg-blue-500/25 transition-colors'
             : `btn inline-flex items-center gap-2 text-xs ${
                 compact
-                  ? 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 px-3 py-2'
+                  ? 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 px-3 py-2'
                   : 'btn-primary'
               }`
         }
       >
-        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          aria-hidden="true"
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
-        <span>تثبيت التطبيق</span>
+        <span>{label}</span>
       </button>
 
       {showIOSGuide && (
@@ -93,15 +115,20 @@ export default function PWAInstallButton({ compact = false, dark = false }: { co
             if (e.target === e.currentTarget) setShowIOSGuide(false);
           }}
         >
-          <div className="card max-w-md w-full p-6 text-right" dir="rtl">
-            <h3 className="text-base font-extrabold text-slate-900">تثبيت تطبيق نظام الأرشفة الإلكتروني</h3>
-            <p className="text-sm text-slate-600 mt-2 leading-7">
-              لتثبيت التطبيق على جهاز iPhone أو iPad، اضغط على زر <b>المشاركة</b> في متصفح Safari ثم اختر{' '}
-              <b>إضافة إلى الشاشة الرئيسية (Add to Home Screen)</b>.
+          <div className="card max-w-md w-full p-6 text-start" dir={dir}>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">{label}</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+              {dir === 'rtl'
+                ? 'لتثبيت التطبيق على iPhone أو iPad، اضغط على زر المشاركة في Safari ثم اختر "إضافة إلى الشاشة الرئيسية".'
+                : 'To install on iPhone or iPad, tap the Share button in Safari and select "Add to Home Screen".'}
             </p>
             <div className="mt-5 flex justify-end">
-              <button type="button" className="btn btn-primary text-xs" onClick={() => setShowIOSGuide(false)}>
-                حسناً
+              <button
+                type="button"
+                className="btn btn-primary text-xs"
+                onClick={() => setShowIOSGuide(false)}
+              >
+                {closeLabel}
               </button>
             </div>
           </div>

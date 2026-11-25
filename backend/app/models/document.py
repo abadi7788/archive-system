@@ -37,3 +37,5 @@ class Document(UUIDPrimaryKey, MetadataMixin, Base):
     processing_status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", server_default="queued")
     processing_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)

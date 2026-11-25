@@ -1,10 +1,34 @@
+export type LocaleCode = 'ar' | 'en' | 'fr' | 'es' | 'tr' | 'de' | 'ru' | 'zh' | 'ja' | 'hi' | 'ur';
+export type ThemeMode = 'light' | 'dark';
+
 export type User = {
   id: string;
   username: string;
+  full_name?: string | null;
+  job_title?: string | null;
   role: string;
   department?: string | null;
+  preferred_language?: LocaleCode | null;
+  preferred_theme?: ThemeMode;
   is_active?: boolean;
   must_change_password?: boolean;
+};
+
+export type OwnerSummary = {
+  id: string;
+  username: string;
+  full_name?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  role?: string;
+  display_name: string;
+};
+
+export type EmployeeLinkGroup = {
+  id: string;
+  name: string;
+  created_at?: string | null;
+  members: OwnerSummary[];
 };
 
 export type FolderItem = {
@@ -13,9 +37,15 @@ export type FolderItem = {
   parent_id?: string | null;
   path?: string;
   owner_id?: string;
+  owner_name?: string | null;
+  owner_username?: string | null;
+  owner_job_title?: string | null;
+  can_manage?: boolean;
   item_count?: number;
   subfolder_count?: number;
   updated_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by_name?: string | null;
 };
 
 export type DocItem = {
@@ -33,7 +63,20 @@ export type DocItem = {
   folder_id?: string | null;
   folder_breadcrumb?: string | null;
   folder_path?: string | null;
+  owner_id?: string;
+  owner_name?: string | null;
+  owner_username?: string | null;
+  owner_job_title?: string | null;
+  can_manage?: boolean;
   created_at?: string;
+  deleted_at?: string | null;
+  deleted_by_name?: string | null;
+};
+
+export type TrashData = {
+  folders: FolderItem[];
+  documents: DocItem[];
+  total_count: number;
 };
 
 export type ArchiveFilters = {
@@ -41,6 +84,7 @@ export type ArchiveFilters = {
   mime_type: string;
   classification: string;
   keyword: string;
+  owner_id: string;
   from_date: string;
   to_date: string;
 };
@@ -85,6 +129,12 @@ export type AuditItem = {
   created_at: string;
 };
 
+export type ToastItem = {
+  id: string;
+  type: 'ok' | 'err' | 'info';
+  text: string;
+};
+
 export function formatBytes(n?: number | null): string {
   const bytes = Number(n || 0);
   if (bytes < 1024) return `${bytes} B`;
@@ -97,7 +147,7 @@ function pad2(num: number): string {
   return num < 10 ? `0${num}` : String(num);
 }
 
-/** Format dates cleanly in standard English YYYY-MM-DD (Western digits 0-9). */
+/** Standard ISO YYYY-MM-DD using Western digits 0-9 across all languages. */
 export function formatDateISO(value?: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
@@ -105,30 +155,10 @@ export function formatDateISO(value?: string | null): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** Format date & time cleanly in standard English YYYY-MM-DD HH:mm (Western digits 0-9). */
+/** Standard ISO YYYY-MM-DD HH:mm using Western digits 0-9 across all languages. */
 export function formatDateTimeISO(value?: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return `${formatDateISO(value)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-export function roleLabel(role: string): string {
-  if (role === 'admin') return 'مدير النظام';
-  if (role === 'archiver') return 'موظف أرشفة';
-  if (role === 'viewer') return 'مستخدم عرض فقط';
-  return role;
-}
-
-export function statusMeta(status?: string): { label: string; className: string } {
-  if (status === 'completed') {
-    return { label: 'مفهرس', className: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' };
-  }
-  if (status === 'processing') {
-    return { label: 'جاري المعالجة…', className: 'bg-sky-50 text-sky-700 border-sky-200/70' };
-  }
-  if (status === 'failed') {
-    return { label: 'تعذرت المعالجة', className: 'bg-rose-50 text-rose-700 border-rose-200/70' };
-  }
-  return { label: 'بانتظار الفهرسة', className: 'bg-amber-50 text-amber-800 border-amber-200/70' };
 }

@@ -19,8 +19,16 @@ async def lifespan(_: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         # Ensure new columns exist on pre-existing deployments without manual intervention.
         await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL"))
         await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"))
+        await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(160)"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(160)"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(16)"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_theme VARCHAR(16) NOT NULL DEFAULT 'light'"))
     if settings.bootstrap_admin_username and settings.bootstrap_admin_password:
         async with SessionLocal() as session:
             exists = await session.scalar(select(User.id).where(User.username == settings.bootstrap_admin_username))

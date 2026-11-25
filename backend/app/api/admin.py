@@ -205,9 +205,10 @@ async def test_gemini_settings(
 
 @router.get("/system-summary")
 async def system_summary(_: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
-    total_docs = await db.scalar(select(func.count(Document.id))) or 0
+    total_docs = await db.scalar(select(func.count(Document.id)).where(Document.deleted_at.is_(None))) or 0
     indexed_docs = await db.scalar(
         select(func.count(Document.id)).where(
+            Document.deleted_at.is_(None),
             Document.processing_status == "completed",
             Document.extracted_text.is_not(None),
             Document.extracted_text != "",
@@ -240,7 +241,7 @@ async def reindex_documents(
     actor: Annotated[User, Depends(admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    q = select(Document)
+    q = select(Document).where(Document.deleted_at.is_(None))
     if not payload.force:
         q = q.where(
             or_(
@@ -250,7 +251,7 @@ async def reindex_documents(
             )
         )
     docs = (await db.scalars(q.order_by(Document.created_at.desc()))).all()
-    total_docs = await db.scalar(select(func.count(Document.id))) or 0
+    total_docs = await db.scalar(select(func.count(Document.id)).where(Document.deleted_at.is_(None))) or 0
 
     user_keys_rows = (await db.execute(select(User.id, User.gemini_key_encrypted))).all()
     user_keys = {row.id: row.gemini_key_encrypted for row in user_keys_rows}

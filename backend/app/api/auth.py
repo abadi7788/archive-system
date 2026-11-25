@@ -16,6 +16,9 @@ from app.models.user import User
 
 router = APIRouter()
 
+SUPPORTED_LANGUAGES = {"ar", "en", "fr", "es", "tr", "de", "ru", "zh", "ja", "hi", "ur"}
+SUPPORTED_THEMES = {"light", "dark"}
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -32,12 +35,21 @@ class ChangePasswordPayload(BaseModel):
     new_password: SecretStr = Field(min_length=6, max_length=200)
 
 
+class PreferencesUpdate(BaseModel):
+    preferred_language: str | None = Field(default=None, max_length=16)
+    preferred_theme: str | None = Field(default=None, max_length=16)
+
+
 def _serialize_user(user: User) -> dict:
     return {
         "id": str(user.id),
         "username": user.username,
+        "full_name": user.full_name,
+        "job_title": user.job_title,
         "role": user.role.value,
         "department": user.department,
+        "preferred_language": user.preferred_language,
+        "preferred_theme": user.preferred_theme or "light",
         "is_active": user.is_active,
         "must_change_password": bool(user.must_change_password),
     }
@@ -58,6 +70,27 @@ async def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annot
 
 @router.get("/me")
 async def get_me(user: Annotated[User, Depends(current_user)]):
+    return _serialize_user(user)
+
+
+@router.patch("/preferences")
+async def update_preferences(
+    payload: PreferencesUpdate,
+    user: Annotated[User, Depends(current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if payload.preferred_language is not None:
+        lang = payload.preferred_language.strip().lower()
+        if lang not in SUPPORTED_LANGUAGES:
+            raise HTTPException(status_code=422, detail="Unsupported language selection")
+        user.preferred_language = lang
+    if payload.preferred_theme is not None:
+        theme = payload.preferred_theme.strip().lower()
+        if theme not in SUPPORTED_THEMES:
+            raise HTTPException(status_code=422, detail="Unsupported theme selection")
+        user.preferred_theme = theme
+    await db.commit()
+    await db.refresh(user)
     return _serialize_user(user)
 
 

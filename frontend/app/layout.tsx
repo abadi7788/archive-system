@@ -1,16 +1,24 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
+import { IBM_Plex_Sans_Arabic } from 'next/font/google';
 import PwaRegister from './components/PwaRegister';
 
+const ibmPlexArabic = IBM_Plex_Sans_Arabic({
+  subsets: ['arabic', 'latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-ibm-plex-arabic',
+  display: 'swap',
+});
+
 export const viewport: Viewport = {
-  themeColor: '#0b1c2d',
+  themeColor: '#0F172A',
   width: 'device-width',
   initialScale: 1,
 };
 
 export const metadata: Metadata = {
   title: 'نظام الأرشفة الإلكتروني | Archive-Yemany',
-  description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والبحث في النصوص والأرشفة الآمنة.',
+  description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والمجلدات والبحث السريع.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -27,14 +35,14 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'نظام الأرشفة الإلكتروني | Archive-Yemany',
-    description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والبحث في النصوص والأرشفة الآمنة.',
+    description: 'نظام الأرشفة الإلكتروني لإدارة المستندات والمجلدات والبحث السريع.',
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl">
-      <body>
+    <html lang="ar" dir="rtl" className={ibmPlexArabic.variable} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-[#F8FAFC] text-slate-900 dark:bg-[#0B1120] dark:text-slate-100">
         <PwaRegister />
         {children}
       </body>
