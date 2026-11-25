@@ -28,7 +28,6 @@ function cacheBlob(docId: string, url: string, mime: string) {
 export function renderHighlightedText(snippet?: string | null, query?: string) {
   if (!snippet) return null;
 
-  // Backend returns ⟦matched⟧ markers; if absent but query is active, highlight client-side cleanly
   if (snippet.includes('⟦') && snippet.includes('⟧')) {
     const parts = snippet.split(/(⟦[^⟧]+⟧)/g);
     return (
@@ -37,7 +36,7 @@ export function renderHighlightedText(snippet?: string | null, query?: string) {
           part.startsWith('⟦') && part.endsWith('⟧') ? (
             <mark
               key={idx}
-              className="rounded px-1 py-0.5 bg-amber-200/80 dark:bg-amber-500/30 text-slate-900 dark:text-amber-100 font-semibold"
+              className="rounded px-1 py-0.5 bg-amber-200/85 dark:bg-amber-500/30 text-[#0F2137] dark:text-amber-100 font-semibold"
             >
               {part.slice(1, -1)}
             </mark>
@@ -61,7 +60,7 @@ export function renderHighlightedText(snippet?: string | null, query?: string) {
         part.toLowerCase() === cleanQ.toLowerCase() ? (
           <mark
             key={idx}
-            className="rounded px-1 py-0.5 bg-amber-200/80 dark:bg-amber-500/30 text-slate-900 dark:text-amber-100 font-semibold"
+            className="rounded px-1 py-0.5 bg-amber-200/85 dark:bg-amber-500/30 text-[#0F2137] dark:text-amber-100 font-semibold"
           >
             {part}
           </mark>
@@ -168,15 +167,15 @@ export default function DocumentInspector({
     return (
       <div
         dir={dir}
-        className="card h-full min-h-[420px] p-6 flex flex-col items-center justify-center text-center"
+        className="card h-full min-h-[430px] p-6 flex flex-col items-center justify-center text-center"
       >
-        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 grid place-items-center mb-3.5">
+        <div className="w-12 h-12 rounded-2xl bg-brand-50 dark:bg-[#132942] border border-brand-200/70 dark:border-[#0891B2]/25 text-[#0E7490] dark:text-[#22D3EE] grid place-items-center mb-3.5">
           <AppIcon name="eye" size={22} />
         </div>
-        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+        <h3 className="text-sm font-bold text-[#0F2137] dark:text-slate-100">
           {t.inspectorEmptyTitle}
         </h3>
-        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 max-w-[230px] leading-relaxed">
+        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 max-w-[235px] leading-relaxed">
           {t.inspectorEmptyDesc}
         </p>
       </div>
@@ -188,17 +187,18 @@ export default function DocumentInspector({
   const isPdf = effectiveMime === 'application/pdf';
   const statusMeta = statusDisplayMeta(doc.status, t);
   const ownerDisplay = doc.owner_name || doc.owner_username || '—';
-  const excerptSource = doc.snippet || (query.trim() && doc.extracted_text ? doc.extracted_text.slice(0, 260) : null);
+  const excerptSource =
+    doc.snippet || (query.trim() && doc.extracted_text ? doc.extracted_text.slice(0, 260) : null);
 
   return (
     <div dir={dir} className="card flex flex-col overflow-hidden">
       {/* Inspector Header */}
-      <div className="px-4 py-3.5 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 grid place-items-center shrink-0">
+      <div className="px-4 py-3.5 border-b border-slate-200/85 dark:border-slate-800 bg-slate-50/75 dark:bg-[#0B192B]/60 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] ring-1 ring-[#0891B2]/20 grid place-items-center shrink-0">
             <AppIcon name={isImage ? 'image' : 'file'} size={15} />
           </span>
-          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+          <h3 className="text-xs font-bold tracking-tight text-[#0F2137] dark:text-slate-100 truncate">
             {t.inspectorTitle}
           </h3>
         </div>
@@ -211,7 +211,7 @@ export default function DocumentInspector({
             className={`p-1.5 rounded-lg transition-colors ${
               doc.is_starred
                 ? 'text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/50'
-                : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500'
+                : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-amber-500'
             }`}
           >
             <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={15} />
@@ -222,7 +222,7 @@ export default function DocumentInspector({
               onClick={() => onPrintDoc(doc)}
               title={t.print}
               aria-label={t.print}
-              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-brand-50 dark:hover:bg-white/10 hover:text-[#0E7490] dark:hover:text-[#22D3EE] transition-colors"
             >
               <AppIcon name="printer" size={15} />
             </button>
@@ -232,7 +232,7 @@ export default function DocumentInspector({
             onClick={() => onOpenFullPreview(doc)}
             title={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
             aria-label={canPrint ? t.openFullPreviewPrint : t.openFullPreview}
-            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-brand-50 dark:hover:bg-white/10 hover:text-[#0E7490] dark:hover:text-[#22D3EE] transition-colors"
           >
             <AppIcon name="maximize" size={15} />
           </button>
@@ -241,7 +241,7 @@ export default function DocumentInspector({
               type="button"
               onClick={onCloseMobile}
               aria-label={t.close}
-              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
             >
               <AppIcon name="x" size={16} />
             </button>
@@ -261,11 +261,11 @@ export default function DocumentInspector({
               onOpenFullPreview(doc);
             }
           }}
-          className="group relative w-full h-52 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-950/70 overflow-hidden cursor-pointer flex items-center justify-center"
+          className="group relative w-full h-56 rounded-xl border border-slate-200/90 dark:border-slate-800 preview-grid overflow-hidden cursor-pointer flex items-center justify-center"
         >
           {loadingPreview ? (
             <div className="flex flex-col items-center gap-2 text-slate-400 dark:text-slate-500">
-              <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+              <div className="w-6 h-6 rounded-full border-2 border-[#0E7490] border-t-transparent animate-spin" />
               <span className="text-[11px] font-medium">{t.loadingPreview}</span>
             </div>
           ) : blobUrl && isImage ? (
@@ -273,7 +273,7 @@ export default function DocumentInspector({
               src={blobUrl}
               alt={doc.file_name}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-contain p-1.5 transition-transform duration-200 group-hover:scale-[1.02]"
+              className="w-full h-full object-contain p-2 transition-transform duration-200 group-hover:scale-[1.02]"
             />
           ) : blobUrl && isPdf ? (
             <div className="relative w-full h-full">
@@ -286,17 +286,21 @@ export default function DocumentInspector({
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center px-5 text-center">
-              <div className="w-11 h-11 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-blue-600 dark:text-blue-400 grid place-items-center mb-2">
+              <div className="w-11 h-11 rounded-xl bg-white dark:bg-[#132942] border border-slate-200 dark:border-slate-700 text-[#0E7490] dark:text-[#22D3EE] grid place-items-center mb-2 shadow-sm">
                 <AppIcon name={isImage ? 'image' : 'file'} size={22} />
               </div>
               <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
-                {previewFailed ? t.previewUnavailable : canPrint ? t.openFullPreviewPrint : t.openFullPreview}
+                {previewFailed
+                  ? t.previewUnavailable
+                  : canPrint
+                  ? t.openFullPreviewPrint
+                  : t.openFullPreview}
               </p>
             </div>
           )}
 
-          {/* Subtle hover affordance */}
-          <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          {/* Hover affordance */}
+          <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-[#0F2137]/85 via-[#0F2137]/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-white">
               <AppIcon name="maximize" size={12} />
               <span>{canPrint ? t.openFullPreviewPrint : t.openFullPreview}</span>
@@ -306,15 +310,29 @@ export default function DocumentInspector({
 
         {/* File Title */}
         <h4
-          className="mt-3 text-sm font-bold text-slate-900 dark:text-white leading-snug break-words"
+          className="mt-3 text-sm font-bold text-[#0F2137] dark:text-white leading-snug break-words"
           dir="auto"
         >
           {doc.file_name}
         </h4>
 
-        {/* Highlighted Search Snippet (when searching inside image/document content) */}
+        {/* Keyword Pills */}
+        {doc.keywords && doc.keywords.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {doc.keywords.slice(0, 6).map((kw, idx) => (
+              <span
+                key={`${kw}-${idx}`}
+                className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] border border-brand-200/70 dark:border-[#0891B2]/25"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Highlighted Search Snippet */}
         {excerptSource && (
-          <div className="mt-3 rounded-lg bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 p-3">
+          <div className="mt-3 rounded-xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 p-3">
             <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 mb-1">
               {t.matchedExcerpt}
             </div>
@@ -327,7 +345,7 @@ export default function DocumentInspector({
           </div>
         )}
 
-        {/* Summary (when not duplicating snippet) */}
+        {/* Summary */}
         {!excerptSource && doc.summary && (
           <p
             className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-3"
@@ -339,22 +357,22 @@ export default function DocumentInspector({
       </div>
 
       {/* Structured Metadata Rows */}
-      <div className="px-4 py-2 border-t border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 text-xs">
+      <div className="px-4 py-2 border-t border-slate-200/85 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800/80 text-xs">
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.uploadedByLabel}</span>
-          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate text-end">
+          <span className="font-semibold text-[#0F2137] dark:text-slate-200 truncate text-end">
             {ownerDisplay}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.departmentLabel}</span>
-          <span className="font-medium text-slate-800 dark:text-slate-200 truncate text-end">
+          <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate text-end">
             {doc.department || '—'}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.classificationLabel}</span>
-          <span className="font-medium text-slate-800 dark:text-slate-200 truncate text-end">
+          <span className="font-medium text-[#0F2137] dark:text-slate-200 truncate text-end">
             {doc.classification || '—'}
           </span>
         </div>
@@ -366,24 +384,27 @@ export default function DocumentInspector({
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.dateLabel}</span>
-          <span dir="ltr" className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
+          <span dir="ltr" className="font-medium text-[#0F2137] dark:text-slate-200 tabular-nums">
             {formatDateISO(doc.created_at)}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.sizeLabel}</span>
-          <span dir="ltr" className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
+          <span dir="ltr" className="font-medium text-[#0F2137] dark:text-slate-200 tabular-nums">
             {formatBytes(doc.file_size)}
           </span>
         </div>
         <div className="py-2 flex items-center justify-between gap-3">
           <span className="text-slate-500 dark:text-slate-400 shrink-0">{t.statusLabel}</span>
-          <span className={`font-semibold ${statusMeta.textClass}`}>{statusMeta.label}</span>
+          <span className={`inline-flex items-center gap-1.5 font-semibold ${statusMeta.textClass}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
+            <span>{statusMeta.label}</span>
+          </span>
         </div>
       </div>
 
       {/* Quick Direct Actions */}
-      <div className="p-4 pt-3 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 space-y-2">
+      <div className="p-4 pt-3 border-t border-slate-200/85 dark:border-slate-800 bg-slate-50/75 dark:bg-[#0B192B]/60 space-y-2">
         <div className="flex items-center gap-2">
           <button
             type="button"

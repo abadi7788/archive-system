@@ -40,8 +40,10 @@ import {
   getDirection,
   getTranslations,
   isSupportedLocale,
+  LANGUAGES,
   roleDisplayLabel,
 } from './lib/i18n';
+import { localizeApiError, localizeServerMessage } from './lib/errorLocalizer';
 
 const API = '/api/v1';
 const SESSION_KEY = 'archive-system-session';
@@ -193,6 +195,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const [previewDoc, setPreviewDoc] = useState<PreviewDocState | null>(null);
   const [editingDoc, setEditingDoc] = useState<DocItem | null>(null);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [preLoginLangOpen, setPreLoginLangOpen] = useState(false);
 
   // Admin State
   const [users, setUsers] = useState<User[]>([]);
@@ -342,6 +345,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       if (activeToken && !headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${activeToken}`);
       }
+      if (!headers.has('Accept-Language')) {
+        headers.set('Accept-Language', locale);
+      }
       if (
         options.body &&
         !(options.body instanceof FormData) &&
@@ -369,19 +375,24 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
       return res;
     },
-    [token, health, clearSession, t.networkError, t.sessionExpired]
+    [token, locale, health, clearSession, t.networkError, t.sessionExpired]
   );
 
   const parseErrorDetail = async (res: Response, fallback: string): Promise<string> => {
+    let rawDetail = '';
     try {
       const data = await res.json();
-      if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail;
-      if (Array.isArray(data?.detail) && data.detail[0]?.msg) return String(data.detail[0].msg);
-      if (typeof data?.message === 'string' && data.message.trim()) return data.message;
+      if (typeof data?.detail === 'string' && data.detail.trim()) {
+        rawDetail = data.detail;
+      } else if (Array.isArray(data?.detail) && data.detail[0]?.msg) {
+        rawDetail = String(data.detail[0].msg);
+      } else if (typeof data?.message === 'string' && data.message.trim()) {
+        rawDetail = data.message;
+      }
     } catch {
-      // ignore
+      // ignore non-JSON body
     }
-    return fallback;
+    return localizeApiError(rawDetail || fallback, res.status, locale, t);
   };
 
   // Loaders
@@ -707,7 +718,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
       const res = await fetch(`${API}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept-Language': locale,
+        },
         body: formBody.toString(),
       });
       if (!res.ok) {
@@ -1119,6 +1133,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API}/documents`, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.setRequestHeader('Accept-Language', locale);
 
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable && ev.total > 0) {
@@ -1142,14 +1157,17 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             reject(new Error(t.errorGeneric));
           }
         } else {
-          let errMsg = t.errorGeneric;
+          let rawDetail = '';
           try {
             const parsed = JSON.parse(xhr.responseText);
-            if (typeof parsed?.detail === 'string') errMsg = parsed.detail;
+            if (typeof parsed?.detail === 'string') rawDetail = parsed.detail;
+            else if (Array.isArray(parsed?.detail) && parsed.detail[0]?.msg) {
+              rawDetail = String(parsed.detail[0].msg);
+            }
           } catch {
             // ignore
           }
-          reject(new Error(errMsg));
+          reject(new Error(localizeApiError(rawDetail, xhr.status, locale, t)));
         }
       };
 
@@ -1461,7 +1479,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     const data = await res.json();
     await loadAdminData();
     pushToast('ok', t.savedSuccess);
-    return { message: data?.message || t.savedSuccess };
+    return { message: localizeServerMessage(data?.message, true, locale, t) };
   }
 
   async function handleTestGeminiSettings(
@@ -1476,7 +1494,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       return { ok: false, message: msg };
     }
     const data = await res.json();
-    return { ok: Boolean(data?.ok), message: data?.message || t.savedSuccess };
+    const ok = Boolean(data?.ok);
+    return { ok, message: localizeServerMessage(data?.message, ok, locale, t) };
   }
 
   async function handleUnlockStorage(masterPassword: string) {
@@ -1521,7 +1540,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       throw new Error(msg);
     }
     const data = await res.json();
-    return data?.message || t.savedSuccess;
+    return localizeServerMessage(data?.message, true, locale, t);
   }
 
   async function handleCreateBackup() {
@@ -1562,7 +1581,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     pushToast('ok', t.savedSuccess);
     return {
       queued_count: Number(data?.queued_count || 0),
-      message: data?.message || t.savedSuccess,
+      message: localizeServerMessage(data?.message, true, locale, t),
     };
   }
 
@@ -1587,9 +1606,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     return (
       <main
         aria-busy="true"
-        className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0B1120] flex items-center justify-center"
+        className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0A1626] flex items-center justify-center"
       >
-        <div className="w-8 h-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+        <div className="w-8 h-8 rounded-full border-2 border-[#0E7490] border-t-transparent animate-spin" />
       </main>
     );
   }
@@ -1621,20 +1640,48 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   // =========================================================================
-  // MINIMAL LUXURY LOGIN SCREEN (Zero marketing slogans, zero clutter)
+  // EXECUTIVE LOGIN PORTAL
   // =========================================================================
   if (!user || !token) {
     return (
       <div
         dir={dir}
-        className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0B1120] flex flex-col items-center justify-center p-4 sm:p-6 transition-colors"
+        className="min-h-[100svh] auth-canvas flex flex-col items-center justify-center p-4 sm:p-6 transition-colors"
       >
-        <main className="w-full max-w-sm">
-          <div className="card p-7 sm:p-8 shadow-sm">
-            <div className="flex flex-col items-center text-center mb-7">
+        <main className="card-elevated w-full max-w-4xl overflow-hidden grid lg:grid-cols-2">
+          <section className="vault-showcase p-7 sm:p-10 text-white flex flex-col justify-between">
+            <div className="flex items-center gap-3">
               <BrandMark size={48} />
+              <div>
+                <p dir="ltr" className="text-[10px] tracking-[0.2em] font-bold text-cyan-200">ARCHIVE · YEMANY</p>
+                <h2 className="mt-1 text-lg font-bold">{t.appName}</h2>
+              </div>
+            </div>
+            <div aria-hidden="true" className="hidden lg:flex justify-center py-12">
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-9 shadow-executive">
+                <AppIcon name="archive" size={90} className="text-cyan-200" />
+              </div>
+            </div>
+            <div className="hidden lg:flex items-center gap-3 border-t border-white/10 pt-5 text-sm text-slate-300">
+              <AppIcon name="folder" size={17} /><span>{t.navArchive}</span>
+              <span className="h-1 w-1 rounded-full bg-cyan-300" />
+              <AppIcon name="search" size={17} /><span>{t.appShort}</span>
+            </div>
+          </section>
+          <div className="bg-white dark:bg-[#0F2137] p-7 sm:p-10">
+            <div className="flex justify-end gap-2 mb-7">
+              <button type="button" onClick={() => setPreLoginLangOpen(true)} className="btn btn-secondary text-xs gap-2">
+                <AppIcon name="globe" size={15} />
+                {LANGUAGES.find((language) => language.code === locale)?.nativeName}
+              </button>
+              <button type="button" onClick={() => applyLocalPreferences(null, theme === 'dark' ? 'light' : 'dark')}
+                className="btn btn-secondary" aria-label={t.appearanceLabel} title={theme === 'dark' ? t.themeLight : t.themeDark}>
+                <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+              </button>
+            </div>
+            <div className="flex flex-col items-center text-center mb-7">
               <h1 className="mt-4 text-lg font-bold tracking-tight text-slate-900 dark:text-white">
-                {t.appName}
+                {t.signInTitle}
               </h1>
             </div>
 
@@ -1646,6 +1693,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 >
                   {t.usernameLabel}
                 </label>
+                <div className="relative">
+                <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400"><AppIcon name="user" size={16} /></span>
                 <input
                   id="login-username"
                   type="text"
@@ -1654,8 +1703,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                   value={loginUsername}
                   onChange={(e) => setLoginUsername(e.target.value)}
                   placeholder={t.usernamePlaceholder}
-                  className="field"
+                  className="field field-icon-start"
                 />
+                </div>
               </div>
 
               <div>
@@ -1674,6 +1724,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                   required
                   showLabel={t.showPassword}
                   hideLabel={t.hidePassword}
+                  startIcon={<AppIcon name="lock" size={16} />}
                 />
               </div>
 
@@ -1694,8 +1745,16 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 {loginBusy ? t.signingIn : t.signInButton}
               </button>
             </form>
+            <div className="mt-7 pt-5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <SystemStatusPill status={health.status} t={t} onClick={health.retry} />
+              <PWAInstallButton label={t.installApp} closeLabel={t.close} dir={dir} />
+            </div>
           </div>
         </main>
+        {preLoginLangOpen && <LanguageSelectionModal variant="modal" currentLocale={locale} onSelect={(selectedLocale) => {
+          applyLocalPreferences(selectedLocale, null);
+          setPreLoginLangOpen(false);
+        }} />}
 
         <SystemStatusOverlay
           status={health.status}
@@ -1812,9 +1871,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-[#0F172A] text-slate-200 select-none">
+    <div className="flex flex-col h-full sidebar-navy text-slate-200 select-none">
       {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between gap-2.5 border-b border-slate-800/80 shrink-0">
+      <div className="h-16 px-4 flex items-center justify-between gap-2.5 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <BrandMark size={34} compact />
           <span className="text-sm font-bold text-white tracking-tight truncate">
@@ -1831,6 +1890,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         </button>
       </div>
 
+      {(user.role === 'admin' || user.role === 'archiver') && (
+        <div className="px-3 pt-4">
+          <button type="button" onClick={() => handleNavigate('upload')} className="btn btn-primary w-full gap-2">
+            <AppIcon name="upload" size={16} />{t.navUpload}
+          </button>
+        </div>
+      )}
+
       {/* Navigation Links + Shortcuts + Quick Collapsible Folder Tree */}
       <nav aria-label="Main Navigation" className="flex-1 px-3 py-4 overflow-y-auto space-y-5">
         <div className="space-y-1">
@@ -1846,12 +1913,12 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                   onClick={() => handleNavigate(item.key)}
                   className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     active
-                      ? 'bg-blue-600/20 text-white font-semibold'
-                      : 'text-slate-300 font-medium hover:bg-slate-800/70 hover:text-white'
+                      ? 'bg-[#0E7490]/30 text-white font-semibold ring-1 ring-[#0891B2]/40'
+                      : 'text-slate-300 font-medium hover:bg-white/[0.06] hover:text-white'
                   }`}
                 >
                   <span className="flex items-center gap-3 min-w-0">
-                    <span className={active ? 'text-blue-400' : 'text-slate-400'}>
+                    <span className={active ? 'text-[#22D3EE]' : 'text-slate-400'}>
                       <AppIcon name={item.icon} size={18} />
                     </span>
                     <span className="truncate">{item.label}</span>
@@ -1861,7 +1928,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                       dir="ltr"
                       className={`min-w-[22px] h-5 px-1.5 rounded-md text-[11px] font-semibold inline-flex items-center justify-center tabular-nums ${
                         active
-                          ? 'bg-blue-500 text-white'
+                          ? 'bg-[#0891B2] text-white'
                           : 'bg-slate-800 text-slate-300'
                       }`}
                     >
@@ -1877,8 +1944,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                       onClick={() => handleSelectArchiveScope('recent')}
                       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
                         section === 'archive' && archiveScope === 'recent'
-                          ? 'bg-blue-600/20 text-white font-semibold'
-                          : 'text-slate-400 font-medium hover:bg-slate-800/70 hover:text-white'
+                          ? 'bg-[#0E7490]/30 text-white font-semibold ring-1 ring-[#0891B2]/40'
+                          : 'text-slate-400 font-medium hover:bg-white/[0.06] hover:text-white'
                       }`}
                     >
                       <AppIcon
@@ -1886,7 +1953,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                         size={15}
                         className={
                           section === 'archive' && archiveScope === 'recent'
-                            ? 'text-blue-400 shrink-0'
+                            ? 'text-[#22D3EE] shrink-0'
                             : 'text-slate-500 shrink-0'
                         }
                       />
@@ -1898,8 +1965,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                       onClick={() => handleSelectArchiveScope('starred')}
                       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
                         section === 'archive' && archiveScope === 'starred'
-                          ? 'bg-blue-600/20 text-white font-semibold'
-                          : 'text-slate-400 font-medium hover:bg-slate-800/70 hover:text-white'
+                          ? 'bg-[#0E7490]/30 text-white font-semibold ring-1 ring-[#0891B2]/40'
+                          : 'text-slate-400 font-medium hover:bg-white/[0.06] hover:text-white'
                       }`}
                     >
                       <AppIcon
@@ -1921,7 +1988,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         </div>
 
         {/* Collapsible Quick Folder Tree (supports Drag-to-Folder & Drag-to-Upload) */}
-        <div className="pt-4 border-t border-slate-800/80">
+        <div className="pt-4 border-t border-white/10">
           <button
             type="button"
             onClick={() => setFolderTreeOpen((v) => !v)}
@@ -1951,7 +2018,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 onDrop={(e) => handleSidebarFolderDrop(e, null)}
                 className={`w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
                   sidebarDragOverId === '__root__'
-                    ? 'bg-blue-600/30 text-white ring-2 ring-blue-400 font-semibold'
+                    ? 'bg-[#0E7490]/30 text-white ring-2 ring-[#22D3EE] font-semibold'
                     : section === 'archive' && archiveScope === 'all' && !selectedFolder
                     ? 'bg-slate-800 text-white font-semibold'
                     : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
@@ -1963,7 +2030,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                     size={14}
                     className={
                       section === 'archive' && archiveScope === 'all' && !selectedFolder
-                        ? 'text-blue-400 shrink-0'
+                        ? 'text-[#22D3EE] shrink-0'
                         : 'text-slate-500 shrink-0'
                     }
                   />
@@ -2004,7 +2071,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                           onDrop={(e) => handleSidebarFolderDrop(e, folder.id)}
                           className={`group flex items-center gap-1 rounded-lg pe-2 py-1 text-xs transition-colors ${
                             isDragTarget
-                              ? 'bg-blue-600/30 text-white ring-2 ring-blue-400 font-semibold'
+                              ? 'bg-[#0E7490]/30 text-white ring-2 ring-[#22D3EE] font-semibold'
                               : isSelected
                               ? 'bg-slate-800 text-white font-semibold'
                               : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
@@ -2056,7 +2123,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                                 size={14}
                                 className={
                                   isSelected
-                                    ? 'text-blue-400 shrink-0'
+                                    ? 'text-[#22D3EE] shrink-0'
                                     : 'text-amber-400/80 shrink-0'
                                 }
                               />
@@ -2091,9 +2158,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       </nav>
 
       {/* Sidebar Footer: User Profile Card + Install + Logout */}
-      <div className="p-3 border-t border-slate-800/80 space-y-2.5 shrink-0">
-        <div className="flex items-center gap-3 rounded-lg bg-slate-900/80 border border-slate-800/80 px-3 py-2.5">
-          <div className="w-9 h-9 rounded-lg bg-blue-600/25 border border-blue-500/30 text-blue-200 font-bold text-sm grid place-items-center shrink-0">
+      <div className="p-3 border-t border-white/10 space-y-2.5 shrink-0">
+        <div className="flex items-center gap-3 rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2.5">
+          <div className="w-9 h-9 rounded-lg bg-[#0E7490]/25 border border-[#0891B2]/30 text-cyan-200 font-bold text-sm grid place-items-center shrink-0">
             {avatarInitial}
           </div>
           <div className="flex flex-col items-start min-w-0 flex-1">
@@ -2123,10 +2190,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   return (
     <div
       dir={dir}
-      className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex transition-colors"
+      className="min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0A1626] text-slate-900 dark:text-slate-100 flex transition-colors"
     >
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block lg:w-64 shrink-0 sticky top-0 h-[100svh] border-e border-slate-800/80 z-30">
+      <aside className="hidden lg:block lg:w-64 shrink-0 sticky top-0 h-[100svh] border-e border-white/10 z-30">
         {sidebarContent}
       </aside>
 
@@ -2145,7 +2212,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Clean Minimal Top Header (NO Language Dropdown) */}
-        <header className="sticky top-0 z-20 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-20 h-16 bg-white/90 dark:bg-[#0F2137]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -2155,12 +2222,30 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             >
               <AppIcon name="menu" size={18} />
             </button>
+            <span className="hidden sm:grid w-9 h-9 rounded-xl bg-brand-50 dark:bg-[#132942] text-brand-600 dark:text-brand-400 place-items-center">
+              <AppIcon name={section === 'archive' ? 'archive' : section === 'upload' ? 'upload' : section === 'trash' ? 'trash' : 'settings'} size={17} />
+            </span>
             <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
               {pageTitle}
             </h1>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button type="button" className="btn btn-secondary p-2" title={t.retry} aria-label={t.retry}
+              onClick={() => {
+                if (section === 'archive') {
+                  void loadFolders();
+                  void loadDocuments(selectedFolder, query, filters, undefined, archiveScope);
+                } else if (section === 'trash') void loadTrash();
+                else if (section === 'settings' && user.role === 'admin') void loadAdminData();
+                else { void loadFolders(); void loadTaxonomy(); }
+              }}>
+              <AppIcon name="refresh" size={16} className={searchBusy ? 'animate-spin' : ''} />
+            </button>
+            <button type="button" className="btn btn-secondary p-2" title={theme === 'dark' ? t.themeLight : t.themeDark} aria-label={t.appearanceLabel}
+              onClick={() => { void handleUpdatePreferences({ preferred_theme: theme === 'dark' ? 'light' : 'dark' }).catch(() => {}); }}>
+              <AppIcon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+            </button>
             <SystemStatusPill status={health.status} t={t} onClick={health.retry} />
           </div>
         </header>

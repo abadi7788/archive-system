@@ -164,6 +164,13 @@ export function localizeApiError(
 
   // Authentication & credentials
   if (
+    lower.includes('not authenticated') ||
+    lower.includes('could not validate credentials') ||
+    lower.includes('token expired')
+  ) {
+    return t?.sessionExpired || (locale === 'ar' ? 'انتهت الجلسة أو يلزم تسجيل الدخول مجدداً.' : 'Session expired or authentication required. Please sign in again.');
+  }
+  if (
     lower.includes('invalid username') ||
     lower.includes('invalid credentials') ||
     lower.includes('incorrect username') ||

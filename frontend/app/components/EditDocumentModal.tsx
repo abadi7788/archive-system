@@ -77,147 +77,154 @@ export default function EditDocumentModal({
       aria-modal="true"
       aria-labelledby="edit-doc-title"
       dir={dir}
-      className="fixed inset-0 z-[85] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[85] bg-[#091524]/65 backdrop-blur-sm flex items-center justify-center p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
-      <form onSubmit={handleSubmit} className="card w-full max-w-lg p-6 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 grid place-items-center shrink-0">
-              <AppIcon name="edit" size={18} />
+      <form onSubmit={handleSubmit} className="card-elevated w-full max-w-lg overflow-hidden">
+        <div className="px-6 py-4 bg-slate-50/80 dark:bg-[#132942]/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] ring-1 ring-[#0891B2]/20 grid place-items-center shrink-0">
+              <AppIcon name="edit" size={17} />
             </span>
-            <h3 id="edit-doc-title" className="text-base font-bold text-slate-900 dark:text-white truncate">
-              {t.editDocTitle}
-            </h3>
+            <div className="min-w-0">
+              <h3 id="edit-doc-title" className="text-sm sm:text-base font-bold text-[#0F2137] dark:text-white truncate">
+                {t.editDocTitle}
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate" dir="auto">
+                {doc.file_name}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-[#0F2137] dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors"
             aria-label={t.close}
           >
             <AppIcon name="x" size={18} />
           </button>
         </div>
 
-        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-          {t.fileNameLabel}
-          <input
-            className="field mt-1.5"
-            value={fileName}
-            onChange={(e) => setFileName(e.target.value)}
-            maxLength={250}
-            required
-          />
-        </label>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t.targetFolderLabel}
-            <select
-              className="field mt-1.5"
-              value={folderId}
-              onChange={(e) => setFolderId(e.target.value)}
-            >
-              <option value="">{t.noFolderRoot}</option>
-              {writableFolders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.path && f.path !== '/' ? `${f.path}/${f.name}` : f.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t.classificationLabel}
-            {categories.length > 0 ? (
-              <select
-                className="field mt-1.5"
-                value={classification}
-                onChange={(e) => setClassification(e.target.value)}
-              >
-                <option value="">{t.selectClassificationPlaceholder}</option>
-                {classification && !categories.includes(classification) && (
-                  <option value={classification}>{classification}</option>
-                )}
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="field mt-1.5"
-                value={classification}
-                onChange={(e) => setClassification(e.target.value)}
-              />
-            )}
-          </label>
-
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t.departmentLabel}
-            {departments.length > 0 ? (
-              <select
-                className="field mt-1.5"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-              >
-                <option value="">{t.selectDepartmentPlaceholder}</option>
-                {department && !departments.includes(department) && (
-                  <option value={department}>{department}</option>
-                )}
-                {departments.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="field mt-1.5"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-              />
-            )}
-          </label>
-
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t.keywordsCommaLabel}
+        <div className="p-6 space-y-4">
+          <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+            {t.fileNameLabel}
             <input
               className="field mt-1.5"
-              value={keywordsText}
-              onChange={(e) => setKeywordsText(e.target.value)}
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+              maxLength={250}
+              required
             />
           </label>
-        </div>
 
-        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-          {t.notesSummaryLabel}
-          <textarea
-            rows={3}
-            className="field mt-1.5 resize-y"
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-          />
-        </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+              {t.targetFolderLabel}
+              <select
+                className="field mt-1.5"
+                value={folderId}
+                onChange={(e) => setFolderId(e.target.value)}
+              >
+                <option value="">{t.noFolderRoot}</option>
+                {writableFolders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.path && f.path !== '/' ? `${f.path}/${f.name}` : f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        {error && (
-          <p role="alert" className="rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 px-3.5 py-2 text-xs font-medium text-rose-700 dark:text-rose-300">
-            {error}
-          </p>
-        )}
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+              {t.classificationLabel}
+              {categories.length > 0 ? (
+                <select
+                  className="field mt-1.5"
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value)}
+                >
+                  <option value="">{t.selectClassificationPlaceholder}</option>
+                  {classification && !categories.includes(classification) && (
+                    <option value={classification}>{classification}</option>
+                  )}
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="field mt-1.5"
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value)}
+                />
+              )}
+            </label>
 
-        <div className="pt-2 flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={busy} className="btn btn-muted text-xs">
-            {t.cancel}
-          </button>
-          <button type="submit" disabled={busy} className="btn btn-primary text-xs px-5">
-            {busy ? t.saving : t.saveChanges}
-          </button>
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+              {t.departmentLabel}
+              {departments.length > 0 ? (
+                <select
+                  className="field mt-1.5"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                >
+                  <option value="">{t.selectDepartmentPlaceholder}</option>
+                  {department && !departments.includes(department) && (
+                    <option value={department}>{department}</option>
+                  )}
+                  {departments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="field mt-1.5"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                />
+              )}
+            </label>
+
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+              {t.keywordsCommaLabel}
+              <input
+                className="field mt-1.5"
+                value={keywordsText}
+                onChange={(e) => setKeywordsText(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+            {t.notesSummaryLabel}
+            <textarea
+              rows={3}
+              className="field mt-1.5 resize-y"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+            />
+          </label>
+
+          {error && (
+            <p role="alert" className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 px-3.5 py-2.5 text-xs font-medium text-rose-700 dark:text-rose-300">
+              {error}
+            </p>
+          )}
+
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} disabled={busy} className="btn btn-muted text-xs">
+              {t.cancel}
+            </button>
+            <button type="submit" disabled={busy} className="btn btn-primary text-xs px-5">
+              {busy ? t.saving : t.saveChanges}
+            </button>
+          </div>
         </div>
       </form>
     </div>

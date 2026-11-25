@@ -71,16 +71,24 @@ export default function TrashView({
     <div className="max-w-7xl mx-auto space-y-5">
       {/* Header Bar */}
       <div className="card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span>{t.trashTitle}</span>
-            <span dir="ltr" className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-              ({trash.total_count})
-            </span>
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {isAdmin ? t.trashSubtitleAdmin : t.trashSubtitleEmployee}
-          </p>
+        <div className="flex items-start gap-3.5">
+          <span className="w-10 h-10 rounded-xl bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] ring-1 ring-[#0891B2]/20 grid place-items-center shrink-0">
+            <AppIcon name="trash" size={19} />
+          </span>
+          <div>
+            <h2 className="text-base font-bold text-[#0F2137] dark:text-white flex items-center gap-2">
+              <span>{t.trashTitle}</span>
+              <span
+                dir="ltr"
+                className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-[#132942] text-xs font-semibold text-slate-600 dark:text-slate-300 tabular-nums"
+              >
+                {trash.total_count}
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {isAdmin ? t.trashSubtitleAdmin : t.trashSubtitleEmployee}
+            </p>
+          </div>
         </div>
 
         {isAdmin && trash.total_count > 0 && (
@@ -109,11 +117,11 @@ export default function TrashView({
           ))}
         </div>
       ) : trash.total_count === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 grid place-items-center mb-3">
+        <div className="card p-14 text-center">
+          <div className="mx-auto w-12 h-12 rounded-2xl bg-brand-50 dark:bg-[#132942] border border-brand-200/70 dark:border-[#0891B2]/25 text-[#0E7490] dark:text-[#22D3EE] grid place-items-center mb-3.5">
             <AppIcon name="trash" size={22} />
           </div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.trashEmptyTitle}</h3>
+          <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">{t.trashEmptyTitle}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.trashEmptyDesc}</p>
         </div>
       ) : (
@@ -121,21 +129,21 @@ export default function TrashView({
           {/* Trashed Folders */}
           {trash.folders.length > 0 && (
             <section className="space-y-2.5">
-              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <h3 className="text-xs font-bold text-slate-600 dark:text-slate-400">
                 {t.foldersTitle} · <span dir="ltr" className="tabular-nums">{trash.folders.length}</span>
               </h3>
               <div className="card divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
                 {trash.folders.map((folder) => (
                   <div
                     key={folder.id}
-                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/75 dark:hover:bg-[#132942]/40 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 grid place-items-center shrink-0">
+                      <span className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
                         <AppIcon name="folder" size={18} />
                       </span>
                       <div className="min-w-0">
-                        <b className="block text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        <b className="block text-sm font-semibold text-[#0F2137] dark:text-white truncate">
                           {folder.name}
                         </b>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -166,7 +174,7 @@ export default function TrashView({
                         type="button"
                         disabled={busyId === folder.id}
                         onClick={() => handleRestore('folder', folder)}
-                        className="btn btn-muted text-xs py-1.5 px-3"
+                        className="btn btn-primary text-xs py-1.5 px-3"
                       >
                         <AppIcon name="restore" size={14} />
                         <span>{busyId === folder.id ? t.restoring : t.restore}</span>
@@ -175,7 +183,7 @@ export default function TrashView({
                         <button
                           type="button"
                           onClick={() => setConfirmTarget({ kind: 'folder', item: folder })}
-                          className="btn btn-danger text-xs py-1.5 px-3"
+                          className="btn btn-muted text-xs py-1.5 px-3 text-rose-600 dark:text-rose-400 hover:border-rose-300"
                         >
                           <AppIcon name="trash" size={14} />
                           <span>{t.permanentDelete}</span>
@@ -191,7 +199,7 @@ export default function TrashView({
           {/* Trashed Documents */}
           {trash.documents.length > 0 && (
             <section className="space-y-2.5">
-              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <h3 className="text-xs font-bold text-slate-600 dark:text-slate-400">
                 {t.filesTitle} · <span dir="ltr" className="tabular-nums">{trash.documents.length}</span>
               </h3>
               <div className="card divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
@@ -200,14 +208,20 @@ export default function TrashView({
                   return (
                     <div
                       key={doc.id}
-                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/75 dark:hover:bg-[#132942]/40 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 grid place-items-center text-[11px] font-bold shrink-0">
+                        <span
+                          className={`w-10 h-10 rounded-xl grid place-items-center text-[11px] font-bold shrink-0 ring-1 ${
+                            isPdf
+                              ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 ring-rose-500/20'
+                              : 'bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] ring-[#0891B2]/20'
+                          }`}
+                        >
                           {isPdf ? 'PDF' : 'IMG'}
                         </span>
                         <div className="min-w-0">
-                          <b className="block text-sm font-semibold text-slate-900 dark:text-white truncate">
+                          <b className="block text-sm font-semibold text-[#0F2137] dark:text-white truncate">
                             {doc.file_name}
                           </b>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -244,7 +258,7 @@ export default function TrashView({
                           type="button"
                           disabled={busyId === doc.id}
                           onClick={() => handleRestore('doc', doc)}
-                          className="btn btn-muted text-xs py-1.5 px-3"
+                          className="btn btn-primary text-xs py-1.5 px-3"
                         >
                           <AppIcon name="restore" size={14} />
                           <span>{busyId === doc.id ? t.restoring : t.restore}</span>
@@ -253,7 +267,7 @@ export default function TrashView({
                           <button
                             type="button"
                             onClick={() => setConfirmTarget({ kind: 'doc', item: doc })}
-                            className="btn btn-danger text-xs py-1.5 px-3"
+                            className="btn btn-muted text-xs py-1.5 px-3 text-rose-600 dark:text-rose-400 hover:border-rose-300"
                           >
                             <AppIcon name="trash" size={14} />
                             <span>{t.permanentDelete}</span>
@@ -275,18 +289,18 @@ export default function TrashView({
           role="dialog"
           aria-modal="true"
           dir={dir}
-          className="fixed inset-0 z-[85] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[85] bg-[#091524]/70 backdrop-blur-sm flex items-center justify-center p-4"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !deleting) setConfirmTarget(null);
           }}
         >
-          <div className="card max-w-md w-full p-6 shadow-2xl">
+          <div className="card-elevated max-w-md w-full p-6">
             <div className="flex items-center gap-3 pb-3.5 border-b border-slate-200/80 dark:border-slate-800">
               <span className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 grid place-items-center shrink-0">
                 <AppIcon name="trash" size={18} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                <h3 className="text-base font-bold text-[#0F2137] dark:text-white">
                   {confirmTarget.kind === 'empty' ? t.confirmEmptyTrashTitle : t.confirmPermanentTitle}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -296,7 +310,7 @@ export default function TrashView({
             </div>
 
             {confirmTarget.kind !== 'empty' && (
-              <p className="mt-4 text-sm font-semibold text-slate-800 dark:text-slate-200 break-all">
+              <p className="mt-4 text-sm font-semibold text-[#0F2137] dark:text-slate-200 break-all">
                 «{confirmTarget.kind === 'doc' ? confirmTarget.item.file_name : confirmTarget.item.name}»
               </p>
             )}
