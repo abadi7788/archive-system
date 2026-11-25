@@ -51,6 +51,13 @@ export type TranslationKeys = {
   serverUnavailableMessage: string;
   retry: string;
   // Login (clean, zero marketing jargon)
+  loginDemoLabel: string;
+  loginOrganize: string;
+  loginFind: string;
+  loginProtect: string;
+  loginOrganizeDescription: string;
+  loginFindDescription: string;
+  loginProtectDescription: string;
   signInTitle: string;
   usernameLabel: string;
   usernamePlaceholder: string;
@@ -370,6 +377,13 @@ const ar: TranslationKeys = {
   offlineMessage: 'يرجى التحقق من اتصالك بالشبكة ثم إعادة المحاولة.',
   serverUnavailableMessage: 'تعذر الوصول إلى خادم النظام حالياً. يرجى المحاولة بعد قليل.',
   retry: 'إعادة المحاولة',
+  loginDemoLabel: 'عرض توضيحي تفاعلي للأرشفة',
+  loginOrganize: 'تنظيم',
+  loginFind: 'بحث',
+  loginProtect: 'حماية',
+  loginOrganizeDescription: 'مجلدات منظّمة، ووصول أوضح إلى مستنداتك.',
+  loginFindDescription: 'ابحث في أسماء المستندات ومحتواها من مكان واحد.',
+  loginProtectDescription: 'صلاحيات وصول لإدارة من يمكنه الاطّلاع على المستندات.',
   signInTitle: 'تسجيل الدخول',
   usernameLabel: 'اسم المستخدم',
   usernamePlaceholder: 'أدخل اسم المستخدم',
@@ -669,6 +683,13 @@ const en: TranslationKeys = {
   offlineMessage: 'Please check your network connection and try again.',
   serverUnavailableMessage: 'Unable to reach the system server right now. Please try again shortly.',
   retry: 'Retry',
+  loginDemoLabel: 'Interactive archive illustration',
+  loginOrganize: 'Organize',
+  loginFind: 'Find',
+  loginProtect: 'Protect',
+  loginOrganizeDescription: 'Organized folders. A clearer path to your documents.',
+  loginFindDescription: 'Find documents by name or content, in one place.',
+  loginProtectDescription: 'Access permissions control who can view documents.',
   signInTitle: 'Sign In',
   usernameLabel: 'Username',
   usernamePlaceholder: 'Enter username',

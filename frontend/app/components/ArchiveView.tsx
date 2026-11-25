@@ -604,7 +604,7 @@ export default function ArchiveView({
               onSubmit={handleSearchSubmit}
               className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5"
             >
-              {/* Search Bar (Ctrl+K shortcut) */}
+              {/* Search keeps its keyboard shortcut without a visual badge. */}
               <div className="relative flex flex-1 min-w-0 items-center gap-2">
                 <span className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">
                   <AppIcon name="search" size={16} />
@@ -617,7 +617,7 @@ export default function ArchiveView({
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
                   placeholder={t.searchPlaceholder}
-                  className="field field-icon-start min-w-0 flex-1 text-xs sm:text-sm bg-slate-50/85 dark:bg-[#0B192B]/70 focus:bg-white dark:focus:bg-[#0F2137]"
+                  className="field field-icon-start field-icon-end min-w-0 flex-1 text-xs sm:text-sm bg-slate-50/85 dark:bg-[#0B192B]/70 focus:bg-white dark:focus:bg-[#0F2137]"
                 />
                 {query ? (
                   <button
@@ -631,14 +631,7 @@ export default function ArchiveView({
                   >
                     <AppIcon name="x" size={14} />
                   </button>
-                ) : (
-                  <kbd
-                    dir="ltr"
-                    className="hidden md:inline-flex shrink-0 pointer-events-none items-center px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#132942] text-[11px] font-semibold text-slate-400 dark:text-slate-400"
-                  >
-                    Ctrl+K
-                  </kbd>
-                )}
+                ) : null}
               </div>
 
               {/* Action Controls */}
