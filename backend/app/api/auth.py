@@ -2,9 +2,8 @@ import hmac
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import admin_user, current_user
@@ -31,7 +30,7 @@ class MasterChallenge(BaseModel):
 
 
 class ChangePasswordPayload(BaseModel):
-    current_password: SecretStr = Field(min_length=1)
+    current_password: SecretStr | None = Field(default=None)
     new_password: SecretStr = Field(min_length=6, max_length=200)
 
 
@@ -55,15 +54,53 @@ def _serialize_user(user: User) -> dict:
     }
 
 
+async def _extract_login_credentials(request: Request) -> tuple[str, str]:
+    """Accept both standard OAuth2 form-urlencoded and JSON login payloads safely."""
+    content_type = (request.headers.get("content-type") or "").lower()
+    username = ""
+    password = ""
+
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                username = str(body.get("username") or "")
+                password = str(body.get("password") or "")
+        except Exception:
+            pass
+    else:
+        try:
+            form = await request.form()
+            username = str(form.get("username") or "")
+            password = str(form.get("password") or "")
+        except Exception:
+            pass
+
+    return username.strip(), password
+
+
 @router.post("/login", response_model=TokenResponse)
-async def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[AsyncSession, Depends(get_db)]):
-    user = await db.scalar(select(User).where(User.username == form.username))
-    if not user or not user.is_active or not verify_password(form.password, user.password_hash):
+async def login(request: Request, db: Annotated[AsyncSession, Depends(get_db)]):
+    username, password = await _extract_login_credentials(request)
+    if not username or not password:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    user = await db.scalar(select(User).where(User.username == username))
+    if not user:
+        # Case-insensitive fallback if exact username casing differs
+        user = await db.scalar(select(User).where(func.lower(User.username) == username.lower()))
+
+    if not user or not user.is_active or not verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = create_access_token(str(user.id), claims={"role": user.role.value})
     return TokenResponse(access_token=token, user=_serialize_user(user))
 
@@ -101,12 +138,23 @@ async def change_password(
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
 ):
-    current_pw = payload.current_password.get_secret_value()
+    current_pw = payload.current_password.get_secret_value() if payload.current_password else ""
     new_pw = payload.new_password.get_secret_value()
-    if not verify_password(current_pw, user.password_hash):
-        raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
-    if current_pw == new_pw:
-        raise HTTPException(status_code=422, detail="يجب أن تختلف كلمة المرور الجديدة عن كلمة المرور الحالية")
+
+    if user.must_change_password:
+        # Mandatory first-login or post-reset password change:
+        # If current_password is supplied, verify it; always forbid reusing the basic/temp password.
+        if current_pw and not verify_password(current_pw, user.password_hash):
+            raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
+        if verify_password(new_pw, user.password_hash):
+            raise HTTPException(status_code=422, detail="يجب أن تختلف كلمة المرور الجديدة عن كلمة المرور الأساسية")
+    else:
+        if not current_pw or not verify_password(current_pw, user.password_hash):
+            raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
+        if current_pw == new_pw or verify_password(new_pw, user.password_hash):
+            raise HTTPException(status_code=422, detail="يجب أن تختلف كلمة المرور الجديدة عن كلمة المرور الحالية")
+
+    was_first_login = bool(user.must_change_password)
     try:
         user.password_hash = hash_password(new_pw)
     except ValueError as exc:
@@ -118,7 +166,7 @@ async def change_password(
             action="user.password_changed",
             resource_type="user",
             resource_id=str(user.id),
-            detail={"first_login_completed": True},
+            detail={"first_login_completed": was_first_login},
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )

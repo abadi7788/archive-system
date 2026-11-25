@@ -6,10 +6,12 @@ import type { LocaleCode } from './types';
 
 export default function LanguageSelectionModal({
   currentLocale,
+  variant = 'page',
   onSelect,
 }: {
   currentLocale: LocaleCode;
-  onSelect: (locale: LocaleCode) => Promise<void>;
+  variant?: 'page' | 'modal';
+  onSelect: (locale: LocaleCode) => Promise<void> | void;
 }) {
   const [selected, setSelected] = useState<LocaleCode>(currentLocale);
   const [saving, setSaving] = useState(false);
@@ -26,22 +28,27 @@ export default function LanguageSelectionModal({
     }
   }
 
+  const wrapperClass =
+    variant === 'page'
+      ? 'min-h-[100svh] bg-[#F1F5F9] dark:bg-[#0B1120] flex items-center justify-center p-4 sm:p-6 transition-colors'
+      : 'fixed inset-0 z-[95] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4';
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
+      role={variant === 'modal' ? 'dialog' : 'main'}
+      aria-modal={variant === 'modal' ? 'true' : undefined}
       aria-labelledby="lang-select-title"
       dir={previewDir}
-      className="fixed inset-0 z-[95] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4"
+      className={wrapperClass}
     >
-      <div className="card w-full max-w-xl p-6 sm:p-7 shadow-2xl">
-        <div className="flex items-center gap-3.5 pb-4 border-b border-slate-200/80 dark:border-slate-800">
-          <BrandMark size={42} compact />
+      <div className="card w-full max-w-xl p-6 sm:p-8 shadow-sm">
+        <div className="flex items-center gap-3.5 pb-5 border-b border-slate-200/80 dark:border-slate-800">
+          <BrandMark size={44} />
           <div className="min-w-0">
-            <h2 id="lang-select-title" className="text-lg font-bold text-slate-900 dark:text-white">
+            <h1 id="lang-select-title" className="text-lg font-bold text-slate-900 dark:text-white">
               {previewT.chooseLanguageTitle}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
               {previewT.chooseLanguageSubtitle}
             </p>
           </div>
@@ -82,7 +89,7 @@ export default function LanguageSelectionModal({
             type="button"
             disabled={saving}
             onClick={handleConfirm}
-            className="btn btn-primary px-6"
+            className="btn btn-primary px-6 py-2.5 text-sm"
           >
             {saving ? previewT.saving : previewT.saveAndContinue}
           </button>

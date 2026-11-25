@@ -30,10 +30,15 @@ async def lifespan(_: FastAPI):
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_theme VARCHAR(16) NOT NULL DEFAULT 'light'"))
     if settings.bootstrap_admin_username and settings.bootstrap_admin_password:
+        from app.core.security import verify_password
+        from app.models.audit_log import AuditLog
+
         async with SessionLocal() as session:
-            exists = await session.scalar(select(User.id).where(User.username == settings.bootstrap_admin_username))
-            if not exists:
-                bootstrap_password = settings.bootstrap_admin_password.get_secret_value()
+            bootstrap_password = settings.bootstrap_admin_password.get_secret_value()
+            existing_admin = await session.scalar(
+                select(User).where(User.username == settings.bootstrap_admin_username)
+            )
+            if not existing_admin:
                 try:
                     password_hash = hash_password(bootstrap_password)
                 except ValueError:
@@ -47,10 +52,22 @@ async def lifespan(_: FastAPI):
                         username=settings.bootstrap_admin_username,
                         password_hash=password_hash,
                         role=UserRole.ADMIN,
-                        must_change_password=False,
+                        must_change_password=True,
                     )
                 )
                 await session.commit()
+            elif not existing_admin.must_change_password and verify_password(
+                bootstrap_password, existing_admin.password_hash
+            ):
+                changed_before = await session.scalar(
+                    select(AuditLog.id).where(
+                        AuditLog.actor_id == existing_admin.id,
+                        AuditLog.action == "user.password_changed",
+                    )
+                )
+                if not changed_before:
+                    existing_admin.must_change_password = True
+                    await session.commit()
     yield
     await engine.dispose()
 

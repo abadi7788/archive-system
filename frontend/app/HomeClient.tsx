@@ -43,6 +43,7 @@ import {
 const API = '/api/v1';
 const SESSION_KEY = 'archive-system-session';
 const PREF_LANG_KEY = 'archive-pref-lang';
+const PREF_LANG_CHOSEN_KEY = 'archive-pref-lang-chosen';
 const PREF_THEME_KEY = 'archive-pref-theme';
 
 type SectionKey = 'archive' | 'upload' | 'trash' | 'settings';
@@ -85,6 +86,15 @@ function readInitialLocale(propLocale?: LocaleCode): LocaleCode {
   return 'ar';
 }
 
+function readHasChosenLanguage(): boolean {
+  if (typeof window !== 'undefined') {
+    if (window.localStorage.getItem(PREF_LANG_CHOSEN_KEY) === '1') return true;
+    const saved = window.localStorage.getItem(PREF_LANG_KEY);
+    if (isSupportedLocale(saved)) return true;
+  }
+  return false;
+}
+
 function readInitialTheme(): ThemeMode {
   if (typeof window !== 'undefined') {
     const saved = window.localStorage.getItem(PREF_THEME_KEY);
@@ -98,6 +108,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   // Preferences
   const [locale, setLocale] = useState<LocaleCode>(() => readInitialLocale(initialLocale));
+  const [languageChosen, setLanguageChosen] = useState<boolean>(() => readHasChosenLanguage());
   const [theme, setTheme] = useState<ThemeMode>(() => readInitialTheme());
 
   const t = useMemo(() => getTranslations(locale), [locale]);
@@ -177,8 +188,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const applyLocalPreferences = useCallback((nextLocale?: LocaleCode | null, nextTheme?: ThemeMode | null) => {
     if (nextLocale && isSupportedLocale(nextLocale)) {
       setLocale(nextLocale);
+      setLanguageChosen(true);
       try {
         window.localStorage.setItem(PREF_LANG_KEY, nextLocale);
+        window.localStorage.setItem(PREF_LANG_CHOSEN_KEY, '1');
       } catch {
         // ignore storage restrictions
       }
@@ -386,15 +399,15 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   );
 
   const loadAdminData = useCallback(
-    async (overrideToken?: string) => {
+    async (overrideToken?: string, overrideStepUp?: string) => {
       try {
-        const [usersRes, groupsRes, auditRes, summaryRes, geminiRes, metricsRes] = await Promise.all([
+        const activeStepUp = overrideStepUp ?? stepUpToken;
+        const [usersRes, groupsRes, auditRes, summaryRes, geminiRes] = await Promise.all([
           apiFetch('/users', {}, overrideToken),
           apiFetch('/users/link-groups', {}, overrideToken),
           apiFetch('/audit?limit=100', {}, overrideToken),
           apiFetch('/admin/system-summary', {}, overrideToken),
           apiFetch('/admin/gemini-settings', {}, overrideToken),
-          apiFetch('/admin/storage-metrics', {}, overrideToken),
         ]);
 
         if (usersRes.ok) {
@@ -418,15 +431,38 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           const data: GeminiSettings = await geminiRes.json();
           setGeminiSettings(data);
         }
-        if (metricsRes.ok) {
-          const data: StorageMetrics = await metricsRes.json();
-          setStorageMetrics(data);
+        if (activeStepUp) {
+          const metricsRes = await apiFetch(
+            '/admin/storage/metrics',
+            { headers: { 'X-Admin-Step-Up': activeStepUp } },
+            overrideToken
+          );
+          if (metricsRes.ok) {
+            const data: StorageMetrics = await metricsRes.json();
+            setStorageMetrics(data);
+          }
         }
       } catch {
         // ignore
       }
     },
-    [apiFetch]
+    [apiFetch, stepUpToken]
+  );
+
+  const loadWorkspaceData = useCallback(
+    async (activeToken: string, role: string) => {
+      await Promise.all([
+        loadFolders(activeToken),
+        loadDocuments('', '', EMPTY_FILTERS, activeToken),
+        loadVisibleOwners(activeToken),
+        loadTrash(activeToken),
+      ]);
+
+      if (role === 'admin') {
+        await loadAdminData(activeToken);
+      }
+    },
+    [loadFolders, loadDocuments, loadVisibleOwners, loadTrash, loadAdminData]
   );
 
   const bootstrapSession = useCallback(
@@ -445,7 +481,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       setUser(freshUser);
       persistSession(nextToken, freshUser);
 
-      // Sync user saved preferences from DB
+      // Sync language/theme permanently between device and DB account
       if (freshUser.preferred_language && isSupportedLocale(freshUser.preferred_language)) {
         applyLocalPreferences(freshUser.preferred_language, freshUser.preferred_theme || null);
         setShowLanguageModal(false);
@@ -453,30 +489,43 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         if (freshUser.preferred_theme) {
           applyLocalPreferences(null, freshUser.preferred_theme);
         }
-        // First sign-in language choice modal (for both Admin and employees)
-        setShowLanguageModal(true);
+        // Save the device's pre-login chosen language permanently to the user's account
+        const deviceLang = readInitialLocale(initialLocale);
+        if (readHasChosenLanguage() && isSupportedLocale(deviceLang)) {
+          try {
+            const prefRes = await apiFetch(
+              '/auth/preferences',
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ preferred_language: deviceLang }),
+              },
+              nextToken
+            );
+            if (prefRes.ok) {
+              freshUser = await prefRes.json();
+              setUser(freshUser);
+              persistSession(nextToken, freshUser);
+            }
+          } catch {
+            // ignore silent sync failure
+          }
+          setShowLanguageModal(false);
+        } else {
+          setShowLanguageModal(true);
+        }
       }
 
-      await Promise.all([
-        loadFolders(nextToken),
-        loadDocuments('', '', EMPTY_FILTERS, nextToken),
-        loadVisibleOwners(nextToken),
-        loadTrash(nextToken),
-      ]);
-
-      if (freshUser.role === 'admin') {
-        await loadAdminData(nextToken);
+      // If mandatory password change is pending, wait until completed before loading archive workspace
+      if (!freshUser.must_change_password) {
+        await loadWorkspaceData(nextToken, freshUser.role);
       }
     },
     [
       apiFetch,
       persistSession,
       applyLocalPreferences,
-      loadFolders,
-      loadDocuments,
-      loadVisibleOwners,
-      loadTrash,
-      loadAdminData,
+      initialLocale,
+      loadWorkspaceData,
     ]
   );
 
@@ -533,16 +582,20 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
     setLoginBusy(true);
     try {
+      const formBody = new URLSearchParams();
+      formBody.set('username', loginUsername.trim());
+      formBody.set('password', loginPassword);
+
       const res = await fetch(`${API}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: loginUsername.trim(),
-          password: loginPassword,
-        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody.toString(),
       });
       if (!res.ok) {
-        const msg = await parseErrorDetail(res, t.invalidCredentials);
+        const msg =
+          res.status === 401
+            ? t.invalidCredentials
+            : await parseErrorDetail(res, t.invalidCredentials);
         setLoginError(msg);
         return;
       }
@@ -595,10 +648,32 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       const msg = await parseErrorDetail(res, t.errorGeneric);
       throw new Error(msg);
     }
+    const data = await res.json();
     if (user) {
-      const updatedUser: User = { ...user, must_change_password: false };
+      const updatedUser: User = data?.user || { ...user, must_change_password: false };
       setUser(updatedUser);
       persistSession(token, updatedUser);
+    }
+    pushToast('ok', t.savedSuccess);
+  }
+
+  async function handleFirstLoginPasswordChange(newPassword: string) {
+    const res = await apiFetch('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        new_password: newPassword,
+      }),
+    });
+    if (!res.ok) {
+      const msg = await parseErrorDetail(res, t.errorGeneric);
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    if (user) {
+      const updatedUser: User = data?.user || { ...user, must_change_password: false };
+      setUser(updatedUser);
+      persistSession(token, updatedUser);
+      await loadWorkspaceData(token, updatedUser.role);
     }
     pushToast('ok', t.savedSuccess);
   }
@@ -1023,23 +1098,27 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   async function handleUnlockStorage(masterPassword: string) {
-    const res = await apiFetch('/admin/storage-step-up', {
+    const res = await apiFetch('/auth/admin/master-challenge', {
       method: 'POST',
-      body: JSON.stringify({ master_password: masterPassword }),
+      body: JSON.stringify({ password: masterPassword }),
     });
     if (!res.ok) {
       const msg = await parseErrorDetail(res, t.errorGeneric);
       throw new Error(msg);
     }
     const data = await res.json();
-    setStepUpToken(data?.step_up_token || 'unlocked');
+    const nextStepUp = data?.step_up_token || '';
+    setStepUpToken(nextStepUp);
+    if (nextStepUp) {
+      await loadAdminData(token, nextStepUp);
+    }
     pushToast('ok', t.savedSuccess);
   }
 
   async function handleSaveProvider() {
-    const res = await apiFetch('/admin/storage-provider', {
-      method: 'POST',
-      headers: stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : {},
+    const res = await apiFetch('/admin/storage', {
+      method: 'PUT',
+      headers: stepUpToken ? { 'X-Admin-Step-Up': stepUpToken } : {},
       body: JSON.stringify({ provider }),
     });
     if (!res.ok) {
@@ -1051,9 +1130,9 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   async function handleTestStorage(): Promise<string> {
-    const res = await apiFetch('/admin/storage-test', {
+    const res = await apiFetch('/admin/storage/test', {
       method: 'POST',
-      headers: stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : {},
+      headers: stepUpToken ? { 'X-Admin-Step-Up': stepUpToken } : {},
     });
     if (!res.ok) {
       const msg = await parseErrorDetail(res, t.errorGeneric);
@@ -1064,7 +1143,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   }
 
   async function handleCreateBackup() {
-    const res = await apiFetch('/admin/backup', { method: 'POST' });
+    const res = await apiFetch('/admin/backup/create', {
+      method: 'POST',
+      headers: stepUpToken ? { 'X-Admin-Step-Up': stepUpToken } : {},
+    });
     if (!res.ok) {
       const msg = await parseErrorDetail(res, t.errorGeneric);
       pushToast('err', msg);
@@ -1123,6 +1205,32 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       >
         <div className="w-8 h-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
       </main>
+    );
+  }
+
+  // =========================================================================
+  // PRE-LOGIN FIRST-VISIT LANGUAGE SELECTION SCREEN (Shown ONCE before Login)
+  // =========================================================================
+  if (!user && !languageChosen) {
+    return (
+      <>
+        <LanguageSelectionModal
+          variant="page"
+          currentLocale={locale}
+          onSelect={(selectedLocale) => {
+            applyLocalPreferences(selectedLocale, null);
+          }}
+        />
+        <SystemStatusOverlay
+          status={health.status}
+          reason={health.reason}
+          checking={health.checking}
+          t={t}
+          dir={dir}
+          onRetry={health.retry}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
     );
   }
 
@@ -1213,6 +1321,32 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
+    );
+  }
+
+  // =========================================================================
+  // MANDATORY FIRST-LOGIN PASSWORD REPLACEMENT GATE (Un-bypassable)
+  // =========================================================================
+  if (user.must_change_password) {
+    return (
+      <>
+        <FirstLoginPasswordModal
+          user={user}
+          t={t}
+          dir={dir}
+          onSubmit={handleFirstLoginPasswordChange}
+          onLogout={() => clearSession()}
+        />
+        <SystemStatusOverlay
+          status={health.status}
+          reason={health.reason}
+          checking={health.checking}
+          t={t}
+          dir={dir}
+          onRetry={health.retry}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
     );
   }
 
@@ -1666,20 +1800,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         />
       )}
 
-      {/* First-Login Mandatory Password Change Modal */}
-      {user.must_change_password && (
-        <FirstLoginPasswordModal
-          user={user}
-          t={t}
-          dir={dir}
-          onSubmit={handleChangePassword}
-          onLogout={() => clearSession()}
-        />
-      )}
-
-      {/* First-Login Language Selection Modal (after password change if required) */}
-      {!user.must_change_password && showLanguageModal && (
+      {/* Post-login Language Selection Fallback (only if logged in from a fresh browser with no account language) */}
+      {showLanguageModal && (
         <LanguageSelectionModal
+          variant="modal"
           currentLocale={locale}
           onSelect={async (selectedLocale) => {
             await handleUpdatePreferences({ preferred_language: selectedLocale });
