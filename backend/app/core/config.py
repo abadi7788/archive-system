@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     postgres_host: str = "postgres"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
 
+    # Limits processing only, never upload/storage. Large originals remain downloadable.
+    extraction_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024)
+    upload_session_hours: int = Field(default=24, ge=1)
     storage_provider: str = "local"
     s3_endpoint_url: str = "http://minio:9000"
     s3_bucket_name: str = "archive-documents"

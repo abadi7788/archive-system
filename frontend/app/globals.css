@@ -473,3 +473,28 @@ input, select, textarea, button { font: inherit; }
   .showcase-stage { transform: none !important; }
   .login-showcase *, .login-showcase *::after { transition: none !important; }
 }
+
+/* One navy frame: use the exact shared sidebar background, in both themes. */
+.workspace-header, .workspace-sidebar {
+  background: radial-gradient(ellipse 95% 28% at 50% 0%, rgba(8,145,178,.18), transparent 72%), linear-gradient(180deg, #0F2137 0%, #102438 100%);
+}
+.workspace-header { border-color: #ffffff1A; color: #F1F5F9; }
+.workspace-header h1 { color: #fff; }
+.workspace-header p { color: #CBD5E1; }
+.workspace-header .btn-secondary, .workspace-header > div > button { background: #ffffff0D; border-color: #ffffff26; color: #E2E8F0; }
+.workspace-header .btn-secondary:hover, .workspace-header > div > button:hover { background: #ffffff1A; color: #fff; }
+.archive-item-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--item-size, 160px)), 1fr)); }
+.archive-grid-scroll .archive-item-grid > .card { min-width: 0; }
+.archive-grid-scroll .archive-thumbnail { height: clamp(90px, calc(var(--item-size, 160px) * .75), 210px); }
+.archive-grid-scroll .archive-thumbnail svg { width: clamp(32px, calc(var(--item-size, 160px) * .3), 80px); height: auto; }
+.archive-grid-scroll .archive-folder-icon { width: calc(var(--item-size, 160px) / 4); height: calc(var(--item-size, 160px) / 4); }
+.archive-grid-scroll .archive-folder-icon svg { width: 55%; height: 55%; }
+.file-list-scroll td:nth-child(2) > div > span:first-child { width: var(--row-icon-size, 32px); height: var(--row-icon-size, 32px); }
+.file-list-scroll td:nth-child(2) > div > span:first-child svg { width: 55%; height: 55%; }
+.archive-summary > .card { min-width: 0; }
+@media (max-width: 639px) {
+  .archive-summary > .card:nth-child(-n+2) { border-bottom: 0; }
+  .archive-summary > .card:nth-child(2) { border-inline-end: 1px solid var(--border-subtle); }
+  .archive-summary > .card > div:last-child { display: none; }
+  .archive-summary > .card { padding-inline: .6rem; }
+}

@@ -1,4 +1,6 @@
 import io
+import asyncio
+from pathlib import Path
 import logging
 import re
 import uuid
@@ -8,7 +10,7 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,23 +33,11 @@ from app.services.storage_service import get_storage
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-MAX_UPLOAD_BYTES = 40 * 1024 * 1024
-ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/tiff"}
+from app.services.file_types import EXTENSIONS, detect_file_type, extract_local_text
+from app.services.names import available_name, renamed_file, validate_name
+from app.core.config import settings
 
-MIME_ALIASES = {
-    "image/jpg": "image/jpeg",
-    "image/pjpeg": "image/jpeg",
-    "image/x-png": "image/png",
-    "application/x-pdf": "application/pdf",
-}
-
-MIME_EXT_MAP = {
-    "application/pdf": ".pdf",
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/tiff": ".tiff",
-}
+MIME_EXT_MAP = {mime: ext for ext, mime in EXTENSIONS.items()}
 
 
 class BulkMovePayload(BaseModel):
@@ -57,27 +47,6 @@ class BulkMovePayload(BaseModel):
 
 class BulkIdsPayload(BaseModel):
     document_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
-
-
-def _detect_mime_type(content: bytes, declared_mime: str | None) -> str | None:
-    """Detect canonical MIME type from file magic bytes, resilient to Windows/browser MIME quirks."""
-    if len(content) >= 5 and content[:5] == b"%PDF-":
-        return "application/pdf"
-    if len(content) >= 3 and content[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if len(content) >= 8 and content[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
-        return "image/webp"
-    if len(content) >= 4 and content[:4] in (b"II*\x00", b"MM\x00*"):
-        return "image/tiff"
-    # PDF files occasionally contain small leading whitespace or BOM before %PDF-
-    if b"%PDF-" in content[:1024]:
-        return "application/pdf"
-    normalized = MIME_ALIASES.get((declared_mime or "").strip().lower(), (declared_mime or "").strip().lower())
-    if normalized in ALLOWED_TYPES:
-        return None  # Declared type didn't match file signature
-    return None
 
 
 def _build_content_disposition(file_name: str, mime_type: str, inline: bool = True) -> str:
@@ -176,8 +145,17 @@ async def _run_ocr_background(
         try:
             doc.processing_status = "processing"
             await session.commit()
+            if doc.file_size > settings.extraction_max_bytes or Path(doc.file_name).suffix.lower() in {".doc", ".xls", ".ppt"}:
+                doc.processing_status = "stored"
+                doc.processing_error = None
+                await session.commit()
+                return
             content = await get_storage().get(storage_key)
-            out = await GeminiOCRService().extract(content, mime_type, user_key_encrypted=user_key_encrypted)
+            if Path(doc.file_name).suffix.lower() in {".txt", ".docx", ".xlsx", ".pptx"}:
+                text_content = await asyncio.to_thread(extract_local_text, content, doc.file_name)
+                out = {"extracted_text": text_content, "processed_by_key": "local-office-text"}
+            else:
+                out = await GeminiOCRService().extract(content, mime_type, user_key_encrypted=user_key_encrypted)
             doc.extracted_text = out["extracted_text"]
             doc.summary = out.get("summary") or doc.summary
             doc.processed_by_key = out.get("processed_by_key")
@@ -243,16 +221,24 @@ async def upload_document(
     keywords: Annotated[str | None, Form()] = None,
     summary: Annotated[str | None, Form()] = None,
 ):
+    await file.seek(0)
+    size = await asyncio.to_thread(file.file.seek, 0, 2)
+    await file.seek(0)
+    return await store_uploaded_document(background_tasks, file.file, file.filename or "document", size,
+        user, db, request, folder_id, department, classification, keywords, summary)
+
+
+async def store_uploaded_document(background_tasks, source, filename, file_size, user, db, request,
+                                  folder_id=None, department=None, classification=None, keywords=None, summary=None,
+                                  document_id=None, completion=None):
     if user.role == UserRole.VIEWER:
         raise HTTPException(403, "Viewer accounts cannot upload or modify documents")
-
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
-    if not content or len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "File is empty or exceeds the 40 MiB limit")
-
-    detected_mime = _detect_mime_type(content, file.content_type)
-    if not detected_mime or detected_mime not in ALLOWED_TYPES:
-        raise HTTPException(415, "Only PDF and supported image files (JPG, PNG, WEBP, TIFF) are accepted")
+    if file_size <= 0:
+        raise HTTPException(422, "File is empty")
+    name = validate_name(filename, 250)
+    detected_mime = await asyncio.to_thread(detect_file_type, source, name)
+    if not detected_mime:
+        raise HTTPException(415, "Unsupported file type or file contents do not match its extension")
 
     folder = None
     if folder_id and folder_id.strip():
@@ -266,8 +252,8 @@ async def upload_document(
             raise HTTPException(403, "Write access to this folder is required")
 
     parsed_keywords = [k.strip() for k in (keywords or "").split(",") if k.strip()][:50]
-    did = uuid.uuid4()
-    name = (file.filename or "document").replace("/", "_").replace("\\", "_")[:250]
+    did = document_id or uuid.uuid4()
+    await available_name(db, "document", name, folder.id if folder else None, user.id)
     key = f"{user.id}/{did}"
     doc = Document(
         id=did,
@@ -280,13 +266,17 @@ async def upload_document(
         file_name=name,
         file_path=key,
         mime_type=detected_mime,
-        file_size=len(content),
-        processing_status="queued",
+        file_size=file_size,
+        processing_status="queued" if file_size <= settings.extraction_max_bytes and Path(name).suffix.lower() not in {".doc", ".xls", ".ppt"} else "stored",
     )
+    if doc.processing_status == "stored":
+        doc.metadata_json = {"extraction_note": "Original stored; automatic extraction is not available for this format or processing size."}
     db.add(doc)
     await db.flush()
+    if completion is not None:
+        completion.document_id = did
     try:
-        await get_storage().put(key, content, detected_mime)
+        await get_storage().put_file(key, source, detected_mime)
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to store uploaded document %s: %s", did, type(exc).__name__)
@@ -303,8 +293,8 @@ async def upload_document(
             resource_id=str(did),
             detail={
                 "file_name": name,
-                "size": len(content),
-                "status": "queued",
+                "size": file_size,
+                "status": doc.processing_status,
                 "folder_id": str(folder.id) if folder else None,
             },
             ip_address=request.client.host if request.client else None,
@@ -313,7 +303,8 @@ async def upload_document(
     )
     await db.commit()
 
-    background_tasks.add_task(run_ocr_background, did, key, detected_mime, user.gemini_key_encrypted)
+    if doc.processing_status == "queued":
+        background_tasks.add_task(run_ocr_background, did, key, detected_mime, user.gemini_key_encrypted)
 
     breadcrumbs = await build_folder_breadcrumbs(db)
     folder_breadcrumb, folder_path = format_document_path(doc.folder_id, name, breadcrumbs)
@@ -364,16 +355,17 @@ async def bulk_move_documents(
     unique_ids = list(dict.fromkeys(payload.document_ids))
     docs = (
         await db.scalars(
-            select(Document).where(Document.id.in_(unique_ids), Document.deleted_at.is_(None))
+            select(Document).where(Document.id.in_(unique_ids), Document.deleted_at.is_(None)).order_by(Document.id).with_for_update()
         )
     ).all()
 
     moved = 0
     skipped = 0
-    for doc in docs:
+    for doc in sorted(docs, key=lambda item: str(item.user_id)):
         if not await _can_write_doc(doc, user, db):
             skipped += 1
             continue
+        await available_name(db, "document", doc.file_name, target_folder.id if target_folder else None, doc.user_id, doc.id)
         doc.folder_id = target_folder.id if target_folder else None
         moved += 1
 
@@ -703,12 +695,13 @@ async def edit_document(
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request,
 ):
-    doc = await db.get(Document, document_id)
+    doc = await db.scalar(select(Document).where(Document.id == document_id).with_for_update())
     if not doc or doc.deleted_at is not None:
         raise HTTPException(404, "Document not found")
     if not await _can_write_doc(doc, user, db):
         raise HTTPException(403, "You cannot edit this document")
     allowed = {"file_name", "department", "classification", "keywords", "summary", "folder_id"}
+    old_name = doc.file_name
     changes = []
     for key, value in payload.items():
         if key not in allowed:
@@ -731,7 +724,7 @@ async def edit_document(
         elif key == "file_name":
             if not isinstance(value, str) or not value.strip():
                 raise HTTPException(422, "file_name cannot be empty")
-            doc.file_name = value.strip().replace("/", "_").replace("\\", "_")[:250]
+            doc.file_name = renamed_file(old_name, value)
         elif key == "keywords":
             if not isinstance(value, list) or len(value) > 50 or not all(isinstance(item, str) and len(item) <= 80 for item in value):
                 raise HTTPException(422, "keywords must be a list of up to 50 short strings")
@@ -742,6 +735,8 @@ async def edit_document(
             cleaned = value.strip() if isinstance(value, str) else None
             setattr(doc, key, cleaned or None)
         changes.append(key)
+    if "file_name" in changes or "folder_id" in changes:
+        await available_name(db, "document", doc.file_name, doc.folder_id, doc.user_id, doc.id)
     if "keywords" in changes:
         doc.metadata_json = {**(doc.metadata_json or {}), "keywords": doc.keywords}
     if "classification" in changes:
@@ -749,10 +744,10 @@ async def edit_document(
     db.add(
         AuditLog(
             actor_id=user.id,
-            action="document.edited",
+            action="document.renamed" if old_name != doc.file_name else "document.edited",
             resource_type="document",
             resource_id=str(doc.id),
-            detail={"fields": changes},
+            detail={"fields": changes, **({"old_name": old_name, "new_name": doc.file_name} if old_name != doc.file_name else {})},
             ip_address=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )
@@ -816,11 +811,17 @@ async def retrieve_document(
     doc = await db.scalar(select(Document).where(Document.id == document_id, vis_clause))
     if not doc:
         raise HTTPException(404, "Document not found")
+    iterator = get_storage().iter_content(doc.file_path)
     try:
-        body = await get_storage().get(doc.file_path)
+        first = await asyncio.to_thread(next, iterator, b"")
     except Exception as exc:
-        logger.error("Failed to retrieve document %s from storage: %s", doc.id, type(exc).__name__)
         raise HTTPException(503, "Document storage is temporarily unavailable") from exc
+    def body():
+        try:
+            yield first
+            yield from iterator
+        finally:
+            iterator.close()
     db.add(
         AuditLog(
             actor_id=user.id,
@@ -833,13 +834,24 @@ async def retrieve_document(
         )
     )
     await db.commit()
-    return Response(
-        body,
+    return StreamingResponse(
+        body(),
         media_type=doc.mime_type,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, private",
             "Pragma": "no-cache",
+            "Content-Length": str(doc.file_size),
             "Content-Disposition": _build_content_disposition(doc.file_name, doc.mime_type, inline=inline),
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+class RenamePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=250)
+
+
+@router.patch("/{document_id}/rename")
+async def rename_document(document_id: uuid.UUID, payload: RenamePayload,
+    user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)], request: Request):
+    return await edit_document(document_id, {"file_name": payload.name}, user, db, request)

@@ -33,6 +33,8 @@ const ACTION_LABELS: Record<string, string> = {
   'folder.permanently_deleted': 'حذف مجلد نهائياً',
   'folder.permissions_updated': 'تعديل صلاحيات مجلد',
   'folder.updated': 'تعديل مجلد',
+  'folder.renamed': 'إعادة تسمية مجلد',
+  'document.renamed': 'إعادة تسمية ملف',
   'system.ai_reindex_triggered': 'بدء إعادة الفهرسة',
   'system.backup_created': 'إنشاء نسخة احتياطية',
   'taxonomy.created': 'إضافة قسم أو تصنيف',

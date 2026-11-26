@@ -361,3 +361,162 @@ test('compact desktop login fills the viewport without clipping its controls', a
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(600);
 });
+
+test('archive has three equal summary cards and a navy header matching its sidebar', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockApi(page); await loginFixture(page); await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(40);
+  const cards = page.locator('.archive-summary > .card');
+  await expect(cards).toHaveCount(3);
+  await expect(page.getByText('الموظفون المرتبطون', { exact: true })).toHaveCount(0);
+  const sizes = await cards.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+  expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThan(1);
+  const background = () => page.evaluate(() => [getComputedStyle(document.querySelector('.workspace-header')!).backgroundImage, getComputedStyle(document.querySelector('.workspace-sidebar')!).backgroundImage]);
+  let colors = await background(); expect(colors[0]).toBe(colors[1]);
+  expect(await page.locator('.workspace-header h1').evaluate((element) => getComputedStyle(element).color)).toBe('rgb(255, 255, 255)');
+  await page.getByRole('button', { name: 'المظهر', exact: true }).click();
+  colors = await background(); expect(colors[0]).toBe(colors[1]);
+});
+
+test('rename locks the extension, works for folders, and is hidden for viewers', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  const folder = { id: 'folder-1', name: 'مجلد الاختبار', can_manage: true, parent_id: null };
+  await page.route('**/api/v1/folders', (route) => route.fulfill({ json: [folder] }));
+  let patch: any;
+  await page.route('**/api/v1/documents/doc-0/rename', (route) => { patch = route.request().postDataJSON(); return route.fulfill({ json: {} }); });
+  await page.goto('/');
+  await page.getByRole('button', { name: `إعادة تسمية: ${documents[0].file_name}`, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('.png', { exact: true })).toBeVisible();
+  const input = dialog.getByRole('textbox');
+  await expect(input).toHaveValue('وثيقة تجريبية 1');
+  await input.fill('اسم جديد');
+  await dialog.getByRole('button', { name: 'إعادة تسمية', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(patch).toEqual({ name: 'اسم جديد' });
+  await page.getByRole('button', { name: 'إعادة تسمية: مجلد الاختبار', exact: true }).click();
+  await expect(dialog.getByRole('textbox')).toHaveValue('مجلد الاختبار');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ json: { ...user, role: 'viewer' } }));
+  await page.reload();
+  await expect(page.locator('tbody tr')).toHaveCount(41);
+  await expect(page.getByRole('button', { name: /^إعادة تسمية:/ })).toHaveCount(0);
+});
+
+test('archive slider and Ctrl+wheel resize icons and save an account-specific size', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  const saved: any[] = [];
+  await page.route('**/api/v1/auth/preferences', (route) => {
+    saved.push(route.request().postDataJSON()); return route.fulfill({ json: { ...user, ...route.request().postDataJSON() } });
+  });
+  await page.goto('/');
+  await expect(page.locator('tbody tr')).toHaveCount(40);
+  const size = page.getByRole('slider', { name: 'حجم العرض' });
+  await size.fill('240');
+  await expect.poll(() => page.evaluate((id) => localStorage.getItem(`archive-item-size:${id}`), user.id)).toBe('240');
+  const icon = page.locator('.file-list-scroll tbody td:nth-child(2) > div > span').first();
+  expect((await icon.boundingBox())!.width).toBe(48);
+  await page.locator('.archive-items').dispatchEvent('wheel', { ctrlKey: true, deltaY: -100 });
+  await expect(size).toHaveValue('250');
+  await expect.poll(() => saved.some((patch) => patch.preferred_item_size === 250)).toBe(true);
+  await page.reload();
+  await expect(size).toHaveValue('250');
+  await page.getByRole('button', { name: 'شبكة', exact: true }).click();
+  const thumb = page.locator('.archive-thumbnail').first();
+  expect((await thumb.boundingBox())!.height).toBeCloseTo(187.5);
+  await size.fill('100');
+  expect((await thumb.boundingBox())!.height).toBe(90);
+  await size.fill('160');
+  await expect.poll(() => saved.some((patch) => patch.preferred_item_size === 160)).toBe(true);
+});
+
+async function uploadMock(page: Page, failOnce = false) {
+  const sessions: any[] = [], chunks: number[] = [];
+  let failed = false;
+  await page.route('**/api/v1/uploads**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (route.request().method() === 'POST' && path.endsWith('/uploads')) {
+      const session = { ...route.request().postDataJSON(), id: String(sessions.length + 1), received: 0, chunk_size: 4194304 };
+      sessions.push(session); return route.fulfill({ status: 201, json: session });
+    }
+    const session = sessions.find((item) => item.id === path.split('/')[4]);
+    if (path.endsWith('/complete')) return route.fulfill({ json: { ...documents[0], id: session.id, file_name: session.file_name, folder_id: session.folder_id } });
+    if (route.request().method() === 'PUT') {
+      if (failOnce && !failed && session.received > 0) { failed = true; return route.fulfill({ status: 503, json: { detail: 'Temporary interruption' } }); }
+      const length = route.request().postDataBuffer()!.length;
+      chunks.push(length); session.received += length;
+    }
+    return route.fulfill({ json: session });
+  });
+  return { sessions, chunks };
+}
+
+test('multi-file Office/TXT upload applies shared metadata and retries interrupted chunks', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  const uploads = await uploadMock(page, true);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  const picker = page.locator('input[type="file"]').first();
+  await expect(picker).toHaveAttribute('multiple', '');
+  const accept = await picker.getAttribute('accept');
+  for (const ext of ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt']) expect(accept).toContain(ext);
+  await picker.setInputFiles([
+    { name: 'Workbook.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.alloc(5 * 1024 * 1024, 65) },
+    { name: 'Notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') },
+  ]);
+  await page.getByLabel('القسم', { exact: true }).fill('Finance');
+  await page.locator('button[type="submit"]').click();
+  await expect.poll(() => uploads.sessions.length).toBe(2);
+  await expect(page.locator('p[role="status"]')).toContainText('2');
+  expect(uploads.sessions.map((item) => item.department)).toEqual(['Finance', 'Finance']);
+  expect(uploads.chunks).toEqual([4194304, 1048576, 5]);
+  await expect(page.getByText(/40 MB|40 ميجابايت/)).toHaveCount(0);
+});
+
+test('directory picker queues every file with the same destination', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  const uploads = await uploadMock(page);
+  await page.route('**/api/v1/folders', (route) => route.fulfill({ json: [{ id: 'folder-target', name: 'الوجهة', can_manage: true }] }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  await page.getByRole('combobox', { name: 'المجلد', exact: true }).selectOption('folder-target');
+  await page.locator('input[webkitdirectory]').setInputFiles('tests/fixtures/import-folder');
+  await expect(page.getByText('import-folder/first.txt')).toBeVisible();
+  await expect(page.getByText('import-folder/second.txt')).toBeVisible();
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('p[role="status"]')).toContainText('2');
+  expect(uploads.sessions.map((item) => item.folder_id)).toEqual(['folder-target', 'folder-target']);
+});
+
+
+test('dropping a directory consumes every reader batch, not only its first entries', async ({ page }) => {
+  await mockApi(page); await loginFixture(page); await page.goto('/');
+  await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  await page.locator('.border-dashed').evaluate((element) => {
+    const entries = Array.from({ length: 105 }, (_, index) => ({ isFile: true, isDirectory: false,
+      file: (resolve: (file: File) => void) => resolve(new File(['text'], `document-${index}.txt`, { type: 'text/plain' })) }));
+    let batch = 0;
+    const directory = { isDirectory: true, isFile: false, createReader: () => ({ readEntries: (resolve: (entries: any[]) => void) => {
+      resolve(batch++ === 0 ? entries.slice(0, 100) : batch === 2 ? entries.slice(100) : []);
+    } }) };
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([''], 'folder'));
+    Object.defineProperty(transfer, 'items', { value: [{ kind: 'file', webkitGetAsEntry: () => directory }] });
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(page.locator('li')).toHaveCount(105);
+  await expect(page.locator('button[type="submit"]')).toContainText('105');
+});
+
+test('upload works on HTTP LAN installations without WebCrypto.subtle', async ({ page }) => {
+  await mockApi(page); await loginFixture(page); const uploads = await uploadMock(page);
+  await page.addInitScript(() => Object.defineProperty(crypto, 'subtle', { value: undefined }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'local.txt', mimeType: 'text/plain', buffer: Buffer.from('local') });
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('p[role="status"]')).toContainText('1');
+  expect(uploads.chunks).toEqual([5]);
+});

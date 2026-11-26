@@ -1,6 +1,8 @@
 'use client';
 import FileThumbnail from './FileThumbnail';
 import DateField from './DateField';
+import RenameDialog from './RenameDialog';
+import { droppedFiles } from '../lib/uploads';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import { statusDisplayMeta, type TranslationKeys } from '../lib/i18n';
@@ -59,6 +61,8 @@ export default function ArchiveView({
   onBulkDownloadZip,
   onBulkUploadFiles,
   onDismissUploadTray,
+  onRename,
+  onSaveDisplaySize,
 }: {
   user: User;
   token: string;
@@ -93,7 +97,41 @@ export default function ArchiveView({
   onBulkDownloadZip: (docIds: string[]) => Promise<void>;
   onBulkUploadFiles: (files: File[], targetFolderId: string | null) => Promise<void>;
   onDismissUploadTray: () => void;
+  onRename: (kind: 'file' | 'folder', item: DocItem | FolderItem, name: string) => Promise<void>;
+  onSaveDisplaySize: (size: number) => Promise<void>;
 }) {
+  const workspace = useRef<HTMLDivElement>(null);
+  const [renameTarget, setRenameTarget] = useState<{ kind: 'file' | 'folder'; item: DocItem | FolderItem } | null>(null);
+  const [itemSize, setItemSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(`archive-item-size:${user.id}`));
+      if (saved >= 100 && saved <= 280) return saved;
+    } catch { /* local storage can be restricted */ }
+    return user.preferred_item_size || 160;
+  });
+  const saveSize = useRef(onSaveDisplaySize);
+  saveSize.current = onSaveDisplaySize;
+  const firstSizeEffect = useRef(true);
+  useEffect(() => {
+    try { localStorage.setItem(`archive-item-size:${user.id}`, String(itemSize)); } catch { /* ignore */ }
+    if (firstSizeEffect.current) {
+      firstSizeEffect.current = false;
+      if (itemSize === (user.preferred_item_size || 160)) return;
+    }
+    const timer = setTimeout(() => { void saveSize.current(itemSize).catch(() => {}); }, 500);
+    return () => clearTimeout(timer);
+  }, [itemSize, user.id]);
+  useEffect(() => {
+    const element = workspace.current;
+    if (!element) return;
+    function zoom(event: WheelEvent) {
+      if (!event.ctrlKey || !(event.target as HTMLElement).closest('.archive-items')) return;
+      event.preventDefault();
+      if (event.deltaY) setItemSize((size) => Math.max(100, Math.min(280, size + (event.deltaY < 0 ? 10 : -10))));
+    }
+    element.addEventListener('wheel', zoom, { passive: false });
+    return () => element.removeEventListener('wheel', zoom);
+  }, []);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -107,7 +145,7 @@ export default function ArchiveView({
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      const saved = window.localStorage.getItem(`${VIEW_MODE_STORAGE_KEY}:${user.id}`);
       if (saved === 'grid' || saved === 'list') {
         setViewMode(saved);
       }
@@ -119,7 +157,7 @@ export default function ArchiveView({
   function handleChangeViewMode(next: ViewMode) {
     setViewMode(next);
     try {
-      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+      window.localStorage.setItem(`${VIEW_MODE_STORAGE_KEY}:${user.id}`, next);
     } catch {
       // ignore
     }
@@ -282,13 +320,6 @@ export default function ArchiveView({
     return folders.filter((f) => (f.parent_id || null) === parentTarget);
   }, [archiveScope, folders, selectedFolder, query, activeFiltersCount]);
 
-  const linkedEmployeesCount = useMemo(() => {
-    if (user.role === 'admin') {
-      return visibleOwners.length;
-    }
-    return visibleOwners.filter((o) => o.id !== user.id).length;
-  }, [visibleOwners, user.id, user.role]);
-
   const allDocsChecked = displayedDocs.length > 0 && checkedDocIds.length === displayedDocs.length;
   const manageableCheckedIds = useMemo(() => {
     if (!checkedDocIds.length || user.role === 'viewer') return [];
@@ -425,7 +456,7 @@ export default function ArchiveView({
     e.preventDefault();
     dragDepthRef.current = 0;
     setDraggingExternalFiles(false);
-    const files = Array.from(e.dataTransfer.files || []);
+    const files = await droppedFiles(e.dataTransfer);
     if (files.length > 0) {
       await onBulkUploadFiles(files, selectedFolder || null);
     }
@@ -454,7 +485,7 @@ export default function ArchiveView({
       return;
     }
 
-    const files = Array.from(e.dataTransfer.files || []);
+    const files = await droppedFiles(e.dataTransfer);
     if (files.length > 0) {
       await onBulkUploadFiles(files, folder.id);
     }
@@ -498,12 +529,17 @@ export default function ArchiveView({
 
   return (
     <div
+      ref={workspace}
+      style={{ '--item-size': `${itemSize}px`, '--row-icon-size': `${Math.round(itemSize / 5)}px` } as React.CSSProperties}
       className="archive-workspace relative w-full h-full min-h-0 mx-auto"
       onDragEnter={handleWorkspaceDragEnter}
       onDragOver={handleWorkspaceDragOver}
       onDragLeave={handleWorkspaceDragLeave}
       onDrop={handleWorkspaceDrop}
     >
+      {renameTarget && <RenameDialog name={renameTarget.kind === 'file' ? (renameTarget.item as DocItem).file_name : (renameTarget.item as FolderItem).name}
+        file={renameTarget.kind === 'file'} t={t} onClose={() => setRenameTarget(null)}
+        onSave={(name) => onRename(renameTarget.kind, renameTarget.item, name)} />}
       {/* Full-area Drag & Drop OS File Upload Overlay */}
       {draggingExternalFiles && canCreate && (
         <div className="pointer-events-none fixed inset-0 z-40 bg-[#0E7490]/14 dark:bg-[#0891B2]/20 backdrop-blur-[2px] flex items-center justify-center p-6">
@@ -528,7 +564,7 @@ export default function ArchiveView({
         {/* =============================================================== */}
         <div className="flex-1 min-w-0 min-h-0 w-full flex flex-col gap-3">
           {/* 1. Executive 4-Card KPI Strip */}
-          <section aria-label="Archive Summary" className="archive-summary shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+          <section aria-label="Archive Summary" className="archive-summary shrink-0 grid grid-cols-3 gap-2 sm:gap-3">
             <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-[#0E7490]">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
@@ -558,7 +594,7 @@ export default function ArchiveView({
                   {folders.length}
                 </div>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/45 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
+              <div className="archive-folder-icon w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/45 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
                 <AppIcon name="folder" size={18} />
               </div>
             </div>
@@ -580,22 +616,6 @@ export default function ArchiveView({
               </div>
             </div>
 
-            <div className="card px-4 py-3.5 flex items-center justify-between gap-3 border-s-[3px] border-s-emerald-500">
-              <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
-                  {t.statLinkedEmployees}
-                </div>
-                <div
-                  dir="ltr"
-                  className="text-xl sm:text-2xl font-bold tracking-tight text-[#0F2137] dark:text-white tabular-nums leading-tight mt-0.5 text-start"
-                >
-                  {linkedEmployeesCount}
-                </div>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/45 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20 grid place-items-center shrink-0">
-                <AppIcon name="users" size={18} />
-              </div>
-            </div>
           </section>
 
           {/* 2. Unified Executive Search & Command Surface */}
@@ -745,6 +765,10 @@ export default function ArchiveView({
                   </select>
                 </div>
 
+                <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                  <span>{t.displaySize}</span><input type="range" min={100} max={280} step={10} value={itemSize}
+                    aria-label={t.displaySize} onChange={(event) => setItemSize(Number(event.target.value))} className="w-20 accent-brand-600" />
+                </label>
                 <div
                   role="group"
                   aria-label="View Mode"
@@ -1152,7 +1176,7 @@ export default function ArchiveView({
             {/* VIEW MODE A: EXECUTIVE HIGH-CLARITY TABLE                   */}
             {/* =========================================================== */}
             {viewMode === 'list' ? (
-              <div className="flex-1 min-h-0 overflow-auto overscroll-contain file-list-scroll">
+              <div className="flex-1 min-h-0 overflow-auto overscroll-contain archive-items file-list-scroll">
                 <table className="w-full text-start border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-[#0B192B]/40">
@@ -1223,6 +1247,7 @@ export default function ArchiveView({
                       return (
                         <tr
                           key={`folder-${folder.id}`}
+                          onContextMenu={(event) => { if (canManageFolder) { event.preventDefault(); setRenameTarget({ kind: 'folder', item: folder }); } }}
                           onClick={() => onSelectFolder(folder.id)}
                           onDragOver={(e) => {
                             if (!canManageFolder) return;
@@ -1286,6 +1311,8 @@ export default function ArchiveView({
                             —
                           </td>
                           <td className="py-3 px-3 text-end">
+                            {canManageFolder && <span className="inline-flex items-center"><button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'folder', item: folder }); }} aria-label={`${t.rename}: ${folder.name}`} title={t.rename}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button></span>}
                             {canManageFolder && (
                               <button
                                 type="button"
@@ -1331,7 +1358,8 @@ export default function ArchiveView({
                             e.dataTransfer.effectAllowed = 'move';
                           }}
                           onClick={() => handleSelectRow(doc)}
-                          onDoubleClick={() => onPreviewDoc(doc)}
+                          onContextMenu={(event) => { if (canManageDoc) { event.preventDefault(); setRenameTarget({ kind: 'file', item: doc }); } }}
+                            onDoubleClick={() => onPreviewDoc(doc)}
                           aria-selected={isSelected}
                           className={`group cursor-pointer transition-colors ${
                             isSelected
@@ -1439,7 +1467,7 @@ export default function ArchiveView({
                           </td>
 
                           <td className="py-3 px-3 text-end align-top">
-                            <div className="inline-flex items-center gap-0.5">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-0.5">
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1458,6 +1486,8 @@ export default function ArchiveView({
                               </button>
 
 
+                              {canManageDoc && <button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'file', item: doc }); }}
+                                aria-label={`${t.rename}: ${doc.file_name}`} title={t.rename} className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button>}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1515,14 +1545,14 @@ export default function ArchiveView({
               /* =========================================================== */
               /* VIEW MODE B: ARCHITECTURAL LUXURY CARD GRID                 */
               /* =========================================================== */
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-5 bg-[#F8FAFC]/60 dark:bg-[#0B192B]/30">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain archive-items archive-grid-scroll p-4 sm:p-5 space-y-5 bg-[#F8FAFC]/60 dark:bg-[#0B192B]/30">
                 {/* Subfolder Cards */}
                 {childFolders.length > 0 && (
                   <div className="space-y-2.5">
                     <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                       {t.foldersTitle} ({childFolders.length})
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="archive-item-grid grid gap-3">
                       {childFolders.map((folder) => {
                         const canManageFolder = folder.can_manage !== false && user.role !== 'viewer';
                         const isDropTarget = dragOverFolderId === folder.id;
@@ -1546,7 +1576,7 @@ export default function ArchiveView({
                             }`}
                           >
                             <div className="flex items-center gap-3 min-w-0">
-                              <span className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
+                              <span className="archive-folder-icon w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
                                 <AppIcon name={isDropTarget ? 'folderOpen' : 'folder'} size={19} />
                               </span>
                               <div className="min-w-0">
@@ -1558,6 +1588,8 @@ export default function ArchiveView({
                                 </div>
                               </div>
                             </div>
+                            {canManageFolder && <span className="inline-flex items-center"><button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'folder', item: folder }); }} aria-label={`${t.rename}: ${folder.name}`} title={t.rename}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button></span>}
                             {canManageFolder && (
                               <button
                                 type="button"
@@ -1586,7 +1618,7 @@ export default function ArchiveView({
                         {t.filesTitle} ({displayedDocs.length})
                       </h3>
                     )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    <div className="archive-item-grid grid gap-3.5">
                       {displayedDocs.map((doc) => {
                         const isSelected = doc.id === selectedDocId;
                         const isChecked = checkedDocIds.includes(doc.id);
@@ -1614,6 +1646,7 @@ export default function ArchiveView({
                               e.dataTransfer.effectAllowed = 'move';
                             }}
                             onClick={() => handleSelectRow(doc)}
+                            onContextMenu={(event) => { if (canManageDoc) { event.preventDefault(); setRenameTarget({ kind: 'file', item: doc }); } }}
                             onDoubleClick={() => onPreviewDoc(doc)}
                             className={`group card card-interactive p-4 flex flex-col justify-between cursor-pointer ${
                               isSelected
@@ -1663,6 +1696,8 @@ export default function ArchiveView({
                                   >
                                     <AppIcon name={doc.is_starred ? 'starFilled' : 'star'} size={14} />
                                   </button>
+                                  {canManageDoc && <button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'file', item: doc }); }}
+                                aria-label={`${t.rename}: ${doc.file_name}`} title={t.rename} className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button>}
                                   <button
                                     type="button"
                                     onClick={(e) => {

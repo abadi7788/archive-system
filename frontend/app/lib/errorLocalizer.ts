@@ -55,8 +55,8 @@ const AR_ERRORS: ErrorCatalog = {
   serviceUnavailable: 'الخدمة غير متوفرة مؤقتاً. يُرجى المحاولة بعد قليل.',
   tooManyRequests: 'تم تجاوز عدد المحاولات المسموح به. يُرجى الانتظار قليلاً ثم المحاولة مرة أخرى.',
   validationError: 'يُرجى التحقق من صحة البيانات المدخلة والمحاولة مرة أخرى.',
-  fileTooLarge: 'حجم الملف غير صالح أو يتجاوز الحد الأقصى المسموح به (40 ميجابايت).',
-  unsupportedFileType: 'نوع الملف غير مدعوم. يُسمح فقط بملفات PDF والصور (JPG، PNG، WEBP، TIFF).',
+  fileTooLarge: 'رفض الخادم جزء الرفع. تحقق من إعدادات الوكيل العكسي ثم أعد المحاولة.',
+  unsupportedFileType: 'نوع الملف غير مدعوم أو لا يتطابق محتواه مع امتداده. الصيغ المدعومة: PDF والصور وWord وExcel وPowerPoint وTXT.',
   invalidCredentials: 'اسم المستخدم أو كلمة المرور غير صحيحة.',
   accountDisabled: 'هذا الحساب معطّل حالياً. يُرجى التواصل مع مدير النظام.',
   currentPasswordWrong: 'كلمة المرور الحالية غير صحيحة.',
@@ -100,8 +100,8 @@ const EN_ERRORS: ErrorCatalog = {
   serviceUnavailable: 'The service is temporarily unavailable. Please try again shortly.',
   tooManyRequests: 'Too many attempts. Please wait a moment and try again.',
   validationError: 'Please review the entered details and try again.',
-  fileTooLarge: 'The file is empty or exceeds the maximum allowed size (40 MB).',
-  unsupportedFileType: 'Unsupported file format. Only PDF and images (JPG, PNG, WEBP, TIFF) are accepted.',
+  fileTooLarge: 'The upload part was rejected. Check reverse proxy request-size settings and retry.',
+  unsupportedFileType: 'Unsupported file content or extension. Supported: PDF, images, Word, Excel, PowerPoint and TXT.',
   invalidCredentials: 'Incorrect username or password.',
   accountDisabled: 'This account is currently disabled. Please contact your system administrator.',
   currentPasswordWrong: 'The current password is incorrect.',
@@ -219,6 +219,10 @@ export function localizeApiError(
     return cat.nameRequired;
   }
 
+  if (lower.includes('name is empty') || lower.includes('name contains invalid') || lower.includes('name is reserved') || lower.includes('invalid name')) {
+    return locale === 'ar' ? 'أدخل اسمًا صحيحًا غير فارغ، دون رموز مثل / \\ : * ? " < > | أو نقطة في النهاية.' : 'Enter a valid non-empty name without reserved characters or a trailing dot.';
+  }
+  if (lower.includes('upload session expired')) return locale === 'ar' ? 'انتهت جلسة الرفع. أعد اختيار الملف لبدء جلسة جديدة.' : 'The upload session expired. Select the file again.';
   // Upload & files
   if (
     lower.includes('exceeds the 40') ||

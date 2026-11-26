@@ -12,7 +12,7 @@ export default function FileThumbnail({ doc, token }: { doc: DocItem; token: str
   const isImage = mime.startsWith('image/');
   const isPdf = mime === 'application/pdf' || extension === 'pdf';
   useEffect(() => {
-    if (!isImage && !isPdf) return;
+    if ((!isImage && !isPdf) || (doc.file_size || 0) > 20 * 1024 * 1024) return;
     const controller = new AbortController();
     let objectUrl = '';
     let started = false;
@@ -45,7 +45,7 @@ export default function FileThumbnail({ doc, token }: { doc: DocItem; token: str
   }, [doc.id, token, isImage, isPdf]);
   const word = ['doc', 'docx', 'odt'].includes(extension);
   const excel = ['xls', 'xlsx', 'csv', 'ods'].includes(extension);
-  return <div ref={host} className="relative h-40 sm:h-44 w-full mb-3 rounded-xl overflow-hidden bg-slate-100 dark:bg-[#0A1626] flex items-center justify-center border border-slate-200 dark:border-slate-700">
+  return <div ref={host} className="archive-thumbnail relative h-40 sm:h-44 w-full mb-3 rounded-xl overflow-hidden bg-slate-100 dark:bg-[#0A1626] flex items-center justify-center border border-slate-200 dark:border-slate-700">
     {url ? <img src={url} alt={doc.file_name} onError={() => setUrl('')} className="w-full h-full object-contain" />
       : <div className={`flex flex-col items-center gap-2 ${excel ? 'text-emerald-600 dark:text-emerald-400' : word ? 'text-brand-600 dark:text-brand-400' : isPdf ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
         <AppIcon name={isImage ? 'image' : excel ? 'grid' : 'file'} size={48} />

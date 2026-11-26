@@ -51,6 +51,15 @@ export type TranslationKeys = {
   serverUnavailableMessage: string;
   retry: string;
   // Login (clean, zero marketing jargon)
+  chooseFiles: string;
+  chooseDirectory: string;
+  batchMetadataHint: string;
+  unsupportedFiles: string;
+  rename: string;
+  renameNameLabel: string;
+  renameExtensionHint: string;
+  displaySize: string;
+  statusStored: string;
   signInTitle: string;
   usernameLabel: string;
   usernamePlaceholder: string;
@@ -370,6 +379,15 @@ const ar: TranslationKeys = {
   offlineMessage: 'يرجى التحقق من اتصالك بالشبكة ثم إعادة المحاولة.',
   serverUnavailableMessage: 'تعذر الوصول إلى خادم النظام حالياً. يرجى المحاولة بعد قليل.',
   retry: 'إعادة المحاولة',
+  chooseFiles: 'اختيار ملفات',
+  chooseDirectory: 'اختيار مجلد كامل',
+  batchMetadataHint: 'يُطبّق المجلد والقسم والبيانات التالية على جميع ملفات الدفعة. تُجمع ملفات المجلد المستورد في المجلد المختار.',
+  unsupportedFiles: 'تم استبعاد صيغ غير مدعومة.',
+  rename: 'إعادة تسمية',
+  renameNameLabel: 'الاسم الجديد',
+  renameExtensionHint: 'يُحفظ امتداد الملف الأصلي تلقائيًا.',
+  displaySize: 'حجم العرض',
+  statusStored: 'محفوظ',
   signInTitle: 'تسجيل الدخول',
   usernameLabel: 'اسم المستخدم',
   usernamePlaceholder: 'أدخل اسم المستخدم',
@@ -462,8 +480,8 @@ const ar: TranslationKeys = {
   uploadPageTitle: 'رفع مستند جديد',
   backToArchive: 'العودة إلى الأرشيف',
   fileOrImageLabel: 'الملف أو الصورة',
-  dropzoneTitle: 'اسحب الملف وأفلته هنا، أو اضغط للاختيار',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · بحد أقصى 40 MB',
+  dropzoneTitle: 'اسحب الملفات أو المجلد هنا، أو استخدم أزرار الاختيار',
+  dropzoneHint: 'PDF · JPG, PNG, WEBP, TIFF · Word (DOC/DOCX) · Excel (XLS/XLSX) · PowerPoint (PPT/PPTX) · TXT',
   removeFile: 'إزالة الملف',
   uploadSubmit: 'رفع المستند',
   uploadingProgress: 'جاري الرفع...',
@@ -669,6 +687,15 @@ const en: TranslationKeys = {
   offlineMessage: 'Please check your network connection and try again.',
   serverUnavailableMessage: 'Unable to reach the system server right now. Please try again shortly.',
   retry: 'Retry',
+  chooseFiles: 'Choose files',
+  chooseDirectory: 'Choose a folder',
+  batchMetadataHint: 'Folder, department and metadata below apply to the entire batch. Imported directory files are collected in the selected folder.',
+  unsupportedFiles: 'Unsupported file types were excluded.',
+  rename: 'Rename',
+  renameNameLabel: 'New name',
+  renameExtensionHint: 'The original file extension is preserved automatically.',
+  displaySize: 'Display size',
+  statusStored: 'Stored',
   signInTitle: 'Sign In',
   usernameLabel: 'Username',
   usernamePlaceholder: 'Enter username',
@@ -761,8 +788,8 @@ const en: TranslationKeys = {
   uploadPageTitle: 'Upload New Document',
   backToArchive: 'Back to Archive',
   fileOrImageLabel: 'File or Image',
-  dropzoneTitle: 'Drag and drop a file here, or click to browse',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · Max 40 MB',
+  dropzoneTitle: 'Drop files or a folder here, or use the selection buttons',
+  dropzoneHint: 'PDF · JPG, PNG, WEBP, TIFF · Word (DOC/DOCX) · Excel (XLS/XLSX) · PowerPoint (PPT/PPTX) · TXT',
   removeFile: 'Remove File',
   uploadSubmit: 'Upload Document',
   uploadingProgress: 'Uploading...',
@@ -1580,6 +1607,7 @@ export function roleDisplayLabel(role: string, t: TranslationKeys): string {
 }
 
 export function statusDisplayMeta(status: string | undefined, t: TranslationKeys): { label: string; dotClass: string; textClass: string } {
+  if (status === 'stored') return { label: t.statusStored, dotClass: 'bg-slate-400', textClass: 'text-slate-600 dark:text-slate-300' };
   if (status === 'completed') {
     return { label: t.statusIndexed, dotClass: 'bg-emerald-500', textClass: 'text-emerald-700 dark:text-emerald-400' };
   }

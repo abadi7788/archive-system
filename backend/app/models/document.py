@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Computed, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import BigInteger, Computed, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,7 +25,7 @@ class Document(UUIDPrimaryKey, MetadataMixin, Base):
     file_name: Mapped[str] = mapped_column(String(512), nullable=False)
     file_path: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     search_vector: Mapped[Optional[str]] = mapped_column(
         TSVECTOR,

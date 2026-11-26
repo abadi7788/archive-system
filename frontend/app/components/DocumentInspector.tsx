@@ -111,6 +111,10 @@ export default function DocumentInspector({
       return;
     }
 
+    if ((doc.file_size || 0) > 20 * 1024 * 1024 || !(doc.mime_type?.startsWith('image/') || doc.mime_type === 'application/pdf')) {
+      setBlobUrl(''); setLoadingPreview(false); setPreviewFailed(true);
+      return;
+    }
     const cached = previewBlobCache.get(doc.id);
     if (cached) {
       setBlobUrl(cached.url);

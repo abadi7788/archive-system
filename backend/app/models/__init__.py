@@ -25,3 +25,5 @@ __all__ = [
 ]
 
 from app.models.gemini_usage import GeminiUsage
+
+from app.models.upload_session import UploadSession

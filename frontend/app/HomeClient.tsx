@@ -2,6 +2,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BrandMark, { AppIcon } from './BrandMark';
 import DocumentModal from './DocumentModal';
+import { isAllowedUploadFile, uploadInChunks, droppedFiles } from './lib/uploads';
 import ArchiveView, { DRAG_DOC_IDS_MIME } from './components/ArchiveView';
 import EditDocumentModal from './components/EditDocumentModal';
 import FirstLoginPasswordModal from './components/FirstLoginPasswordModal';
@@ -86,39 +87,6 @@ const EMPTY_TAXONOMY: TaxonomyData = {
   classifications: [],
 };
 
-const MAX_BULK_UPLOAD_FILES = 20;
-const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
-const ALLOWED_UPLOAD_MIMES = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-  'image/pjpeg',
-  'image/webp',
-  'image/tiff',
-  'image/bmp',
-  'image/gif',
-]);
-const ALLOWED_UPLOAD_EXTS = new Set([
-  'pdf',
-  'png',
-  'jpg',
-  'jpeg',
-  'webp',
-  'tif',
-  'tiff',
-  'bmp',
-  'gif',
-]);
-
-function isAllowedUploadFile(file: File): boolean {
-  const mime = (file.type || '').toLowerCase();
-  if (ALLOWED_UPLOAD_MIMES.has(mime)) return true;
-  const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() || '' : '';
-  return ALLOWED_UPLOAD_EXTS.has(ext);
-}
-
-// Device choices take precedence per field; account settings seed a new browser only.
 function readDevicePreference(key: string): string | null {
   try { return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; }
   catch { return null; }
@@ -732,6 +700,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   async function handleUpdatePreferences(prefs: {
     preferred_language?: LocaleCode;
     preferred_theme?: ThemeMode;
+    preferred_item_size?: number;
   }) {
     applyLocalPreferences(prefs.preferred_language || null, prefs.preferred_theme || null);
     if (!token || !user) return;
@@ -1039,62 +1008,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     },
     onProgress: (percent: number) => void
   ): Promise<DocItem> {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file', payload.file);
-      if (payload.folderId) formData.append('folder_id', payload.folderId);
-      if (payload.department) formData.append('department', payload.department);
-      if (payload.classification) formData.append('classification', payload.classification);
-      if (payload.keywords) formData.append('keywords', payload.keywords);
-      if (payload.summary) formData.append('summary', payload.summary);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API}/documents`, true);
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.setRequestHeader('Accept-Language', locale);
-
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable && ev.total > 0) {
-          const pct = Math.min(99, Math.round((ev.loaded / ev.total) * 100));
-          onProgress(pct);
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status === 401) {
-          clearSession(t.sessionExpired);
-          reject(new Error(t.sessionExpired));
-          return;
-        }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(100);
-          try {
-            const doc: DocItem = JSON.parse(xhr.responseText);
-            resolve(doc);
-          } catch {
-            reject(new Error(t.errorGeneric));
-          }
-        } else {
-          let rawDetail = '';
-          try {
-            const parsed = JSON.parse(xhr.responseText);
-            if (typeof parsed?.detail === 'string') rawDetail = parsed.detail;
-            else if (Array.isArray(parsed?.detail) && parsed.detail[0]?.msg) {
-              rawDetail = String(parsed.detail[0].msg);
-            }
-          } catch {
-            // ignore
-          }
-          reject(new Error(localizeApiError(rawDetail, xhr.status, locale, t)));
-        }
-      };
-
-      xhr.onerror = () => {
-        health.reportConnectionFailure();
-        reject(new Error(t.networkError));
-      };
-
-      xhr.send(formData);
+    return uploadInChunks(payload, token, user?.id || '', onProgress, t.errorGeneric).catch((error) => {
+      throw new Error(localizeApiError(error.message, error.status || 0, locale, t));
     });
   }
 
@@ -1110,18 +1025,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     },
     onProgress: (percent: number) => void
   ): Promise<DocItem> {
-    try {
-      const doc = await uploadFileViaXhr(payload, onProgress);
-      await Promise.all([loadFolders(), loadDocuments()]);
-      pushToast('ok', t.uploadSuccess);
-      return doc;
-    } catch (err: any) {
-      pushToast('err', err?.message || t.errorGeneric);
-      throw err;
-    }
+    return uploadFileViaXhr(payload, onProgress);
   }
 
-  // Bulk Drag & Drop Upload (1–20 files) directly inside Archive
+  // Sequential bulk upload: bounded network/memory use without truncating the file list.
   async function handleBulkUploadFiles(files: File[], targetFolderId: string | null) {
     if (!files.length) return;
     if (uploadTrayTimerRef.current) {
@@ -1129,15 +1036,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       uploadTrayTimerRef.current = null;
     }
 
-    let queue = files;
-    if (files.length > MAX_BULK_UPLOAD_FILES) {
-      pushToast('info', t.dropFilesHereDesc);
-      queue = files.slice(0, MAX_BULK_UPLOAD_FILES);
-    }
-
+    const queue = files;
     const initialTasks: BulkUploadTask[] = queue.map((file, idx) => {
       const id = `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`;
-      if (file.size > MAX_UPLOAD_BYTES || !isAllowedUploadFile(file)) {
+      if (!isAllowedUploadFile(file) || !file.size) {
         return { id, fileName: file.name, progress: 0, status: 'error', error: t.dropzoneHint };
       }
       return { id, fileName: file.name, progress: 0, status: 'uploading' };
@@ -1163,7 +1065,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
           {
             file: queue[i],
             folderId: targetFolderId,
-            department: user?.department || '',
+            department: filters.department || user?.department || '',
+            classification: filters.classification || '',
           },
           (pct) => {
             setBulkUploadTasks((prev) =>
@@ -1716,7 +1619,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     }
   };
 
-  const handleSidebarFolderDrop = (
+  const handleSidebarFolderDrop = async (
     e: React.DragEvent,
     targetFolderId: string | null
   ) => {
@@ -1737,10 +1640,10 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
       }
     }
 
-    const droppedFiles = Array.from(e.dataTransfer.files || []);
-    if (droppedFiles.length > 0) {
+    const filesToUpload = await droppedFiles(e.dataTransfer);
+    if (filesToUpload.length > 0) {
       setSection('archive');
-      void handleBulkUploadFiles(droppedFiles, targetFolderId);
+      void handleBulkUploadFiles(filesToUpload, targetFolderId);
     }
   };
 
@@ -2150,6 +2053,15 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onResetSearch={handleResetSearch}
               onCreateFolder={handleCreateFolder}
               onDeleteFolder={handleSoftDeleteFolder}
+              onSaveDisplaySize={async (size) => { await handleUpdatePreferences({ preferred_item_size: size }); }}
+              onRename={async (kind, item, name) => {
+                const response = await apiFetch(kind === 'file' ? `/documents/${item.id}/rename` : `/folders/${item.id}`, {
+                  method: 'PATCH', body: JSON.stringify({ name }),
+                });
+                if (!response.ok) throw new Error(await parseErrorDetail(response, t.errorGeneric));
+                await Promise.all([loadFolders(), loadDocuments()]);
+                pushToast('ok', t.savedSuccess);
+              }}
               onPreviewDoc={handlePreviewDoc}
               onToggleStar={handleToggleStar}
               onEditDoc={(doc) => setEditingDoc(doc)}
@@ -2171,6 +2083,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               defaultFolderId={selectedFolder}
               t={t}
               onUpload={handleUploadDocument}
+              onFinished={async () => { await Promise.all([loadFolders(), loadDocuments()]); pushToast('ok', t.uploadSuccess); }}
               onGoArchive={(folderId) => {
                 setArchiveScope('all');
                 if (folderId !== undefined) {

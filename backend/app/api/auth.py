@@ -35,6 +35,7 @@ class ChangePasswordPayload(BaseModel):
 
 
 class PreferencesUpdate(BaseModel):
+    preferred_item_size: int | None = Field(default=None, ge=100, le=280)
     preferred_language: str | None = Field(default=None, max_length=16)
     preferred_theme: str | None = Field(default=None, max_length=16)
 
@@ -49,6 +50,7 @@ def _serialize_user(user: User) -> dict:
         "department": user.department,
         "preferred_language": user.preferred_language,
         "preferred_theme": user.preferred_theme or "light",
+        "preferred_item_size": user.preferred_item_size,
         "is_active": user.is_active,
         "must_change_password": bool(user.must_change_password),
         "can_print": bool(user.role == UserRole.ADMIN or user.can_print),
@@ -123,6 +125,8 @@ async def update_preferences(
     user: Annotated[User, Depends(current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if payload.preferred_item_size is not None:
+        user.preferred_item_size = payload.preferred_item_size
     if payload.preferred_language is not None:
         lang = payload.preferred_language.strip().lower()
         if lang not in SUPPORTED_LANGUAGES:

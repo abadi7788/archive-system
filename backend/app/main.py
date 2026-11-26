@@ -19,6 +19,7 @@ async def lifespan(_: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         # Ensure new columns exist on pre-existing deployments without manual intervention.
         await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT"))
+        await conn.execute(text("ALTER TABLE documents ALTER COLUMN file_size TYPE BIGINT"))
         await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL"))
         await conn.execute(text("ALTER TABLE folders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"))
@@ -31,6 +32,7 @@ async def lifespan(_: FastAPI):
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(160)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(16)"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_theme VARCHAR(16) NOT NULL DEFAULT 'light'"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_item_size INTEGER NOT NULL DEFAULT 160"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
     # Ensure local document storage directory is initialized on startup.
     from app.services.storage_service import get_storage
@@ -128,7 +130,7 @@ async def complete_request_audit(request: Request, call_next):
         response = await call_next(request)
         # Existing domain events remain authoritative. Cover previously unaudited writes,
         # including preferences/settings/grants, but never serialize request bodies.
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 400 and context.get("actor_id") and not context['recorded']:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 400 and context.get("actor_id") and not context['recorded'] and not request.url.path.startswith('/api/v1/uploads'):
             async with SessionLocal() as db:
                 route = request.scope.get('route')
                 template = getattr(route, 'path', request.url.path)

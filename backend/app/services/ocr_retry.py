@@ -13,6 +13,9 @@ async def retry_queued_documents():
     cursor = None
     while True:
         try:
+            from app.api.uploads import cleanup_uploads
+            async with SessionLocal() as cleanup_db:
+                await cleanup_uploads(cleanup_db)
             # Leader election across workers; transaction lock always releases.
             async with SessionLocal() as db:
                 async with db.begin():
