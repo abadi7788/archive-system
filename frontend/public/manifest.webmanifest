@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "نظام الأرشفة الإلكتروني",
-  "short_name": "الأرشيف",
+  "name": "Archive YemanY",
+  "short_name": "Archive YemanY",
   "description": "نظام الأرشفة الإلكتروني لإدارة المستندات والبحث في النصوص والأرشفة الآمنة.",
   "dir": "rtl",
   "lang": "ar",
@@ -9,8 +9,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#0b1c2d",
-  "background_color": "#f4f7fb",
+  "theme_color": "#0F2137",
+  "background_color": "#F1F5F9",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",

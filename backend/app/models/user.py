@@ -1,7 +1,7 @@
 import enum
 from typing import Optional
 
-from sqlalchemy import Boolean, Enum, String
+from sqlalchemy import Boolean, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, MetadataMixin, UUIDPrimaryKey
@@ -30,6 +30,7 @@ class User(UUIDPrimaryKey, MetadataMixin, Base):
     gemini_key_encrypted: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     preferred_language: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     preferred_theme: Mapped[str] = mapped_column(String(16), nullable=False, default="light", server_default="light")
+    preferred_item_size: Mapped[int] = mapped_column(Integer, nullable=False, default=160, server_default="160")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     can_print: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

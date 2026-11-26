@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import admin, audit, auth, dashboard, documents, document_tools, exports, folders, search, taxonomy, trash, users
+from app.api import uploads, admin, audit, auth, dashboard, documents, document_tools, exports, folders, search, taxonomy, trash, users
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -15,3 +15,5 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(folders.router, prefix="/folders", tags=["folders"])
+
+api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])

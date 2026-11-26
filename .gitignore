@@ -1,2 +1,17 @@
 
 .env
+.env.*
+!.env.example
+node_modules/
+.next/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+/deliverables/
+
+.venv/
+.cache/
+
+/test-results/
+/frontend/test-results/
+/frontend/playwright-report/

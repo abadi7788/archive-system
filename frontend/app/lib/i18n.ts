@@ -51,6 +51,15 @@ export type TranslationKeys = {
   serverUnavailableMessage: string;
   retry: string;
   // Login (clean, zero marketing jargon)
+  chooseFiles: string;
+  chooseDirectory: string;
+  batchMetadataHint: string;
+  unsupportedFiles: string;
+  rename: string;
+  renameNameLabel: string;
+  renameExtensionHint: string;
+  displaySize: string;
+  statusStored: string;
   signInTitle: string;
   usernameLabel: string;
   usernamePlaceholder: string;
@@ -355,8 +364,8 @@ export type TranslationKeys = {
 };
 
 const ar: TranslationKeys = {
-  appName: 'نظام الأرشفة الإلكتروني',
-  appShort: 'Archive-Yemany',
+  appName: 'Archive YemanY',
+  appShort: 'Archive YemanY',
   navArchive: 'الأرشيف',
   navUpload: 'رفع مستند',
   navTrash: 'سلة المحذوفات',
@@ -370,6 +379,15 @@ const ar: TranslationKeys = {
   offlineMessage: 'يرجى التحقق من اتصالك بالشبكة ثم إعادة المحاولة.',
   serverUnavailableMessage: 'تعذر الوصول إلى خادم النظام حالياً. يرجى المحاولة بعد قليل.',
   retry: 'إعادة المحاولة',
+  chooseFiles: 'اختيار ملفات',
+  chooseDirectory: 'اختيار مجلد كامل',
+  batchMetadataHint: 'يُطبّق المجلد والقسم والبيانات التالية على جميع ملفات الدفعة. تُجمع ملفات المجلد المستورد في المجلد المختار.',
+  unsupportedFiles: 'تم استبعاد صيغ غير مدعومة.',
+  rename: 'إعادة تسمية',
+  renameNameLabel: 'الاسم الجديد',
+  renameExtensionHint: 'يُحفظ امتداد الملف الأصلي تلقائيًا.',
+  displaySize: 'حجم العرض',
+  statusStored: 'محفوظ',
   signInTitle: 'تسجيل الدخول',
   usernameLabel: 'اسم المستخدم',
   usernamePlaceholder: 'أدخل اسم المستخدم',
@@ -424,7 +442,7 @@ const ar: TranslationKeys = {
   download: 'تحميل',
   print: 'طباعة',
   edit: 'تعديل ونقل',
-  moveToTrash: 'نقل للسلة',
+  moveToTrash: 'حذف',
   close: 'إغلاق',
   statusIndexed: 'مفهرس',
   statusProcessing: 'قيد المعالجة',
@@ -434,7 +452,7 @@ const ar: TranslationKeys = {
   confirmTrashDocDesc: 'يمكنك استعادة هذا الملف لاحقاً من سلة المحذوفات.',
   confirmTrashFolderTitle: 'نقل المجلد إلى سلة المحذوفات',
   confirmTrashFolderDesc: 'سيتم نقل المجلد وكافة محتوياته إلى سلة المحذوفات، ويمكن استعادتها لاحقاً.',
-  moveToTrashConfirm: 'نقل إلى السلة',
+  moveToTrashConfirm: 'حذف',
   movingToTrash: 'جاري النقل...',
   editDocTitle: 'تعديل بيانات المستند ونقله',
   fileNameLabel: 'اسم المستند',
@@ -462,8 +480,8 @@ const ar: TranslationKeys = {
   uploadPageTitle: 'رفع مستند جديد',
   backToArchive: 'العودة إلى الأرشيف',
   fileOrImageLabel: 'الملف أو الصورة',
-  dropzoneTitle: 'اسحب الملف وأفلته هنا، أو اضغط للاختيار',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · بحد أقصى 40 MB',
+  dropzoneTitle: 'اسحب الملفات أو المجلد هنا، أو استخدم أزرار الاختيار',
+  dropzoneHint: 'PDF · JPG, PNG, WEBP, TIFF · Word (DOC/DOCX) · Excel (XLS/XLSX) · PowerPoint (PPT/PPTX) · TXT',
   removeFile: 'إزالة الملف',
   uploadSubmit: 'رفع المستند',
   uploadingProgress: 'جاري الرفع...',
@@ -634,7 +652,7 @@ const ar: TranslationKeys = {
   bulkSelectedLabel: 'ملفات محددة',
   bulkMoveToFolder: 'نقل لمجلد',
   bulkDownloadZip: 'تنزيل ZIP',
-  bulkDeleteSelected: 'نقل للسلة',
+  bulkDeleteSelected: 'حذف',
   bulkClearSelection: 'إلغاء التحديد',
   bulkMoveModalTitle: 'نقل الملفات المحددة إلى مجلد',
   bulkMoveConfirm: 'نقل الآن',
@@ -654,8 +672,8 @@ const ar: TranslationKeys = {
 };
 
 const en: TranslationKeys = {
-  appName: 'Electronic Archive',
-  appShort: 'Archive-Yemany',
+  appName: 'Archive YemanY',
+  appShort: 'Archive YemanY',
   navArchive: 'Archive',
   navUpload: 'Upload Document',
   navTrash: 'Recycle Bin',
@@ -669,6 +687,15 @@ const en: TranslationKeys = {
   offlineMessage: 'Please check your network connection and try again.',
   serverUnavailableMessage: 'Unable to reach the system server right now. Please try again shortly.',
   retry: 'Retry',
+  chooseFiles: 'Choose files',
+  chooseDirectory: 'Choose a folder',
+  batchMetadataHint: 'Folder, department and metadata below apply to the entire batch. Imported directory files are collected in the selected folder.',
+  unsupportedFiles: 'Unsupported file types were excluded.',
+  rename: 'Rename',
+  renameNameLabel: 'New name',
+  renameExtensionHint: 'The original file extension is preserved automatically.',
+  displaySize: 'Display size',
+  statusStored: 'Stored',
   signInTitle: 'Sign In',
   usernameLabel: 'Username',
   usernamePlaceholder: 'Enter username',
@@ -761,8 +788,8 @@ const en: TranslationKeys = {
   uploadPageTitle: 'Upload New Document',
   backToArchive: 'Back to Archive',
   fileOrImageLabel: 'File or Image',
-  dropzoneTitle: 'Drag and drop a file here, or click to browse',
-  dropzoneHint: 'PDF, JPG, PNG, WEBP, TIFF · Max 40 MB',
+  dropzoneTitle: 'Drop files or a folder here, or use the selection buttons',
+  dropzoneHint: 'PDF · JPG, PNG, WEBP, TIFF · Word (DOC/DOCX) · Excel (XLS/XLSX) · PowerPoint (PPT/PPTX) · TXT',
   removeFile: 'Remove File',
   uploadSubmit: 'Upload Document',
   uploadingProgress: 'Uploading...',
@@ -954,7 +981,7 @@ const en: TranslationKeys = {
 
 const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
   fr: {
-    appName: 'Archive Électronique',
+    appName: 'Archive YemanY',
     navArchive: 'Archive',
     navUpload: 'Téléverser',
     navTrash: 'Corbeille',
@@ -1022,7 +1049,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Annuler',
   },
   es: {
-    appName: 'Archivo Electrónico',
+    appName: 'Archive YemanY',
     navArchive: 'Archivo',
     navUpload: 'Subir documento',
     navTrash: 'Papelera',
@@ -1090,7 +1117,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Cancelar',
   },
   tr: {
-    appName: 'Elektronik Arşiv',
+    appName: 'Archive YemanY',
     navArchive: 'Arşiv',
     navUpload: 'Belge Yükle',
     navTrash: 'Geri Dönüşüm',
@@ -1158,7 +1185,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'İptal',
   },
   de: {
-    appName: 'Elektronisches Archiv',
+    appName: 'Archive YemanY',
     navArchive: 'Archiv',
     navUpload: 'Dokument hochladen',
     navTrash: 'Papierkorb',
@@ -1226,7 +1253,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Abbrechen',
   },
   ru: {
-    appName: 'Электронный архив',
+    appName: 'Archive YemanY',
     navArchive: 'Архив',
     navUpload: 'Загрузить',
     navTrash: 'Корзина',
@@ -1294,7 +1321,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'Отмена',
   },
   zh: {
-    appName: '电子档案系统',
+    appName: 'Archive YemanY',
     navArchive: '档案库',
     navUpload: '上传文档',
     navTrash: '回收站',
@@ -1362,7 +1389,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: '取消',
   },
   ja: {
-    appName: '電子アーカイブ',
+    appName: 'Archive YemanY',
     navArchive: 'アーカイブ',
     navUpload: 'アップロード',
     navTrash: 'ゴミ箱',
@@ -1430,7 +1457,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'キャンセル',
   },
   hi: {
-    appName: 'इलेक्ट्रॉनिक आर्काइव',
+    appName: 'Archive YemanY',
     navArchive: 'आर्काइव',
     navUpload: 'दस्तावेज़ अपलोड',
     navTrash: 'रीसायकल बिन',
@@ -1498,7 +1525,7 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
     cancel: 'रद्द करें',
   },
   ur: {
-    appName: 'الیکٹرانک آرکائیو',
+    appName: 'Archive YemanY',
     navArchive: 'آرکائیو',
     navUpload: 'دستاویز اپ لوڈ',
     navTrash: 'ری سائیکل بن',
@@ -1580,11 +1607,12 @@ export function roleDisplayLabel(role: string, t: TranslationKeys): string {
 }
 
 export function statusDisplayMeta(status: string | undefined, t: TranslationKeys): { label: string; dotClass: string; textClass: string } {
+  if (status === 'stored') return { label: t.statusStored, dotClass: 'bg-slate-400', textClass: 'text-slate-600 dark:text-slate-300' };
   if (status === 'completed') {
     return { label: t.statusIndexed, dotClass: 'bg-emerald-500', textClass: 'text-emerald-700 dark:text-emerald-400' };
   }
   if (status === 'processing') {
-    return { label: t.statusProcessing, dotClass: 'bg-blue-500', textClass: 'text-blue-700 dark:text-blue-400' };
+    return { label: t.statusProcessing, dotClass: 'bg-[#0891B2]', textClass: 'text-[#0E7490] dark:text-[#22D3EE]' };
   }
   if (status === 'failed') {
     return { label: t.statusFailed, dotClass: 'bg-rose-500', textClass: 'text-rose-700 dark:text-rose-400' };

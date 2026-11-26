@@ -155,26 +155,26 @@ export function SystemStatusPill({
     status === 'online'
       ? {
           label: t.statusOnline,
-          dot: 'bg-emerald-500',
-          wrap: 'text-emerald-700 dark:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800',
+          dot: 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.16)]',
+          wrap: 'border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/70',
         }
       : status === 'reconnecting'
       ? {
           label: t.statusReconnecting,
-          dot: 'bg-amber-500 animate-pulse',
-          wrap: 'text-amber-700 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800',
+          dot: 'bg-amber-500 animate-pulse shadow-[0_0_0_3px_rgba(245,158,11,0.18)]',
+          wrap: 'border-amber-200/80 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 hover:bg-amber-100/70',
         }
       : {
           label: t.statusOffline,
-          dot: 'bg-rose-500',
-          wrap: 'text-rose-700 dark:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800',
+          dot: 'bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+          wrap: 'border-rose-200/80 dark:border-rose-800/60 bg-rose-50/70 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 hover:bg-rose-100/70',
         };
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${config.wrap}`}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${config.wrap}`}
     >
       <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${config.dot}`} />
       <span>{config.label}</span>
@@ -211,14 +211,16 @@ export function SystemStatusOverlay({
       aria-modal="true"
       aria-labelledby="system-status-title"
       dir={dir}
-      className="fixed inset-0 z-[100] bg-slate-950/65 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-[#091524]/70 backdrop-blur-md flex items-center justify-center p-4"
     >
-      <div className="card max-w-md w-full p-7 text-center shadow-2xl">
+      <div className="card-elevated max-w-md w-full p-7 sm:p-8 text-center">
         <div className="mx-auto mb-5 flex justify-center">
-          <BrandMark size={56} />
+          <div className="p-2.5 rounded-2xl bg-brand-50 dark:bg-[#132942] ring-1 ring-[#0891B2]/20">
+            <BrandMark size={52} />
+          </div>
         </div>
 
-        <h2 id="system-status-title" className="text-lg font-bold text-slate-900 dark:text-white">
+        <h2 id="system-status-title" className="text-lg font-bold text-[#0F2137] dark:text-white">
           {title}
         </h2>
         <p className="mt-2.5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{message}</p>
@@ -228,7 +230,7 @@ export function SystemStatusOverlay({
             type="button"
             onClick={onRetry}
             disabled={checking}
-            className="btn btn-primary min-w-[160px]"
+            className="btn btn-primary min-w-[170px]"
           >
             {checking ? t.statusReconnecting : t.retry}
           </button>

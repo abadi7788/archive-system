@@ -10,6 +10,7 @@ export type User = {
   department?: string | null;
   preferred_language?: LocaleCode | null;
   preferred_theme?: ThemeMode;
+  preferred_item_size?: number;
   is_active?: boolean;
   must_change_password?: boolean;
   can_print?: boolean;

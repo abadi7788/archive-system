@@ -221,3 +221,19 @@ async def shared_file(
             "Content-Disposition": f'inline; filename="{doc.file_name}"',
         },
     )
+
+
+@router.post('/documents/{document_id}/print')
+async def audit_print(document_id: uuid.UUID, user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    from app.models.user import UserRole
+    if user.role != UserRole.ADMIN and not user.can_print:
+        raise HTTPException(403, 'Print permission required')
+    visibility = await build_document_visibility_clause(user, db)
+    doc = await db.scalar(select(Document).where(Document.id == document_id, visibility))
+    if not doc:
+        raise HTTPException(404, 'Document not found')
+    # Browser printing cannot confirm a physical print; record the authorized request.
+    db.add(AuditLog(actor_id=user.id, action='document.print_requested', resource_type='document',
+                    resource_id=str(doc.id), detail={"file_name": doc.file_name}))
+    await db.commit()
+    return {"ok": True}

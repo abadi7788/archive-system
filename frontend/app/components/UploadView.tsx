@@ -1,40 +1,17 @@
 'use client';
-import React, { FormEvent, useEffect, useState } from 'react';
+import React, { FormEvent, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import type { TranslationKeys } from '../lib/i18n';
+import { droppedFiles, isAllowedUploadFile, UPLOAD_ACCEPT } from '../lib/uploads';
 import { DocItem, FolderItem, User, formatBytes } from './types';
 
-export default function UploadView({
-  user,
-  folders,
-  departments,
-  categories,
-  defaultFolderId,
-  t,
-  onUpload,
-  onGoArchive,
-}: {
-  user: User;
-  folders: FolderItem[];
-  departments: string[];
-  categories: string[];
-  defaultFolderId: string;
-  t: TranslationKeys;
-  onUpload: (
-    payload: {
-      file: File;
-      folderId: string;
-      department: string;
-      classification: string;
-      keywords: string;
-      summary: string;
-    },
-    onProgress: (percent: number) => void
-  ) => Promise<DocItem>;
-  onGoArchive: (folderId?: string) => void;
+type Payload = { file: File; folderId: string; department: string; classification: string; keywords: string; summary: string };
+export default function UploadView({ user, folders, departments, categories, defaultFolderId, t, onUpload, onGoArchive, onFinished }: {
+  user: User; folders: FolderItem[]; departments: string[]; categories: string[]; defaultFolderId: string; t: TranslationKeys;
+  onUpload: (payload: Payload, onProgress: (percent: number) => void) => Promise<DocItem>;
+  onGoArchive: (folderId?: string) => void; onFinished: () => Promise<void>;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [files, setFiles] = useState<File[]>([]);
   const [folderId, setFolderId] = useState(defaultFolderId || '');
   const [department, setDepartment] = useState(user.department || '');
   const [classification, setClassification] = useState('');
@@ -42,250 +19,74 @@ export default function UploadView({
   const [summary, setSummary] = useState('');
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
-  const [uploadedDoc, setUploadedDoc] = useState<DocItem | null>(null);
-
+  const [done, setDone] = useState(0);
+  const [tasks, setTasks] = useState<Record<string, { progress: number; error?: string; done?: boolean }>>({});
+  const fileInput = useRef<HTMLInputElement>(null);
+  const directoryInput = useRef<HTMLInputElement>(null);
   const writableFolders = folders.filter((f) => f.can_manage !== false);
+  const parsedKeywordTags = useMemo(() => keywords.split(',').map((k) => k.trim()).filter(Boolean).slice(0, 12), [keywords]);
+  const fileKey = (file: File) => `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`;
 
-  useEffect(() => {
-    if (!file || !file.type.startsWith('image/')) {
-      setPreviewUrl('');
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  if (user.role === 'viewer') {
-    return (
-      <section className="card p-8 text-center max-w-xl mx-auto">
-        <h2 className="text-base font-bold text-slate-900 dark:text-white">{t.viewerNoUploadTitle}</h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t.viewerNoUploadDesc}</p>
-        <button type="button" onClick={() => onGoArchive()} className="btn btn-primary mt-5 text-xs">
-          {t.backToArchive}
-        </button>
-      </section>
-    );
+  function addFiles(candidates: File[]) {
+    if (busy) return;
+    const valid = candidates.filter(isAllowedUploadFile);
+    setError(valid.length !== candidates.length ? t.unsupportedFiles : '');
+    setDone(0);
+    setFiles((previous) => Array.from(new Map([...previous, ...valid].map((file) => [fileKey(file), file])).values()));
   }
-
-  function pickFile(candidate: File | null) {
-    setError('');
-    setUploadedDoc(null);
-    setProgress(0);
-    if (!candidate) {
-      setFile(null);
-      return;
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!files.length || busy) return;
+    setBusy(true); setError('');
+    // Snapshot common metadata for the entire batch; fields are disabled while uploading.
+    const options = { folderId, department, classification, keywords, summary };
+    let completed = 0;
+    const failed: File[] = [];
+    for (const file of files) {
+      const key = fileKey(file);
+      setTasks((previous) => ({ ...previous, [key]: { progress: 0 } }));
+      try {
+        await onUpload({ ...options, file }, (progress) => setTasks((previous) => ({ ...previous, [key]: { progress } })));
+        completed += 1;
+        setTasks((previous) => ({ ...previous, [key]: { progress: 100, done: true } }));
+      } catch (failure: any) {
+        failed.push(file);
+        setTasks((previous) => ({ ...previous, [key]: { progress: 0, error: failure.message || t.errorGeneric } }));
+      }
     }
-    const allowedMimes = [
-      'application/pdf',
-      'application/x-pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/pjpeg',
-      'image/png',
-      'image/x-png',
-      'image/webp',
-      'image/tiff',
-    ];
-    const ext = (candidate.name || '').toLowerCase().split('.').pop() || '';
-    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff'];
-    if (!allowedMimes.includes((candidate.type || '').toLowerCase()) && !allowedExts.includes(ext)) {
-      setError(t.dropzoneHint);
-      return;
-    }
-    if (candidate.size > 40 * 1024 * 1024) {
-      setError(t.dropzoneHint);
-      return;
-    }
-    setFile(candidate);
+    setDone(completed);
+    if (completed) await onFinished().catch(() => {});
+    setFiles(failed); // Retrying failures never uploads successful files a second time.
+    setBusy(false);
   }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!file) return;
-    setBusy(true);
-    setProgress(5);
-    setError('');
-    try {
-      const created = await onUpload(
-        {
-          file,
-          folderId,
-          department,
-          classification,
-          keywords,
-          summary,
-        },
-        (pct) => setProgress(pct)
-      );
-      setProgress(100);
-      setUploadedDoc(created);
-      setFile(null);
-      setClassification('');
-      setKeywords('');
-      setSummary('');
-    } catch (err: any) {
-      setError(err?.message || t.errorGeneric);
-      setProgress(0);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="max-w-3xl mx-auto space-y-5">
-      {uploadedDoc && (
-        <div className="card p-4 border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-semibold text-sm">
-              <AppIcon name="check" size={16} />
-              <span className="truncate">
-                {t.uploadSuccess}: {uploadedDoc.file_name}
-              </span>
-            </div>
+  if (user.role === 'viewer') return <section className="card p-8 text-center"><h2>{t.viewerNoUploadTitle}</h2><p>{t.viewerNoUploadDesc}</p></section>;
+  return <div className="max-w-4xl mx-auto space-y-4">
+    <form onSubmit={handleSubmit} className="card overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+        <h2 className="font-bold flex items-center gap-2"><AppIcon name="upload" size={20} />{t.uploadPageTitle}</h2>
+        <button type="button" className="btn btn-secondary text-xs" disabled={busy} onClick={() => onGoArchive(folderId)}>{t.backToArchive}</button>
+      </div>
+      <fieldset disabled={busy} className="p-5 sm:p-6 space-y-5 min-w-0">
+        <div onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
+          onDrop={async (event) => { event.preventDefault(); setDragging(false); try { addFiles(await droppedFiles(event.dataTransfer)); } catch { setError(t.errorGeneric); } }}
+          className={`rounded-2xl border-2 border-dashed p-6 text-center ${dragging ? 'border-brand-500 bg-brand-50 dark:bg-navy-surface' : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-navy-deep'}`}>
+          <AppIcon name="upload" size={28} className="mx-auto mb-3 text-brand-600 dark:text-brand-300" />
+          <p className="font-bold">{t.dropzoneTitle}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-2" dir="ltr">{t.dropzoneHint}</p>
+          <div className="flex flex-wrap justify-center gap-3 mt-5">
+            <button type="button" onClick={() => fileInput.current?.click()} className="btn btn-primary text-xs">{t.chooseFiles}</button>
+            <button type="button" onClick={() => directoryInput.current?.click()} className="btn btn-secondary text-xs"><AppIcon name="folder" size={16} />{t.chooseDirectory}</button>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => onGoArchive(uploadedDoc.folder_id || '')}
-              className="btn btn-primary text-xs py-1.5"
-            >
-              {t.openInArchive}
-            </button>
-            <button
-              type="button"
-              onClick={() => setUploadedDoc(null)}
-              className="btn btn-muted text-xs py-1.5"
-            >
-              {t.uploadAnother}
-            </button>
-          </div>
+          <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} multiple className="hidden" aria-label={t.chooseFiles}
+            onChange={(event) => { addFiles(Array.from(event.target.files || [])); event.target.value = ''; }} />
+          <input ref={directoryInput} type="file" multiple {...({ webkitdirectory: '', directory: '' } as any)} className="hidden" aria-label={t.chooseDirectory}
+            onChange={(event) => { addFiles(Array.from(event.target.files || [])); event.target.value = ''; }} />
         </div>
-      )}
-
-      {/* Single Unified Upload Form Card (Title + Back Button merged into card header) */}
-      <form onSubmit={handleSubmit} className="card overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 grid place-items-center shrink-0">
-              <AppIcon name="upload" size={18} />
-            </span>
-            <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">
-              {t.uploadPageTitle}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => onGoArchive(folderId || undefined)}
-            className="btn btn-muted text-xs py-1.5 px-3 shrink-0"
-          >
-            {t.backToArchive}
-          </button>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* Dropzone */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              {t.fileOrImageLabel} <span className="text-rose-500">*</span>
-            </label>
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                pickFile(e.dataTransfer.files?.[0] || null);
-              }}
-              className={`relative rounded-xl border-2 border-dashed p-7 text-center transition-colors ${
-                dragging
-                  ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30'
-                  : file
-                  ? 'border-emerald-400 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-950/20'
-                  : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/50 hover:border-blue-400 dark:hover:border-blue-600'
-              }`}
-            >
-              <input
-                type="file"
-                accept=".pdf,image/jpeg,image/png,image/webp,image/tiff"
-                onChange={(e) => pickFile(e.target.files?.[0] || null)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                aria-label={t.fileOrImageLabel}
-              />
-
-              {!file ? (
-                <div className="space-y-2 pointer-events-none">
-                  <div className="mx-auto w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 grid place-items-center">
-                    <AppIcon name="upload" size={22} />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    {t.dropzoneTitle}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">
-                    {t.dropzoneHint}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt={file.name}
-                      referrerPolicy="no-referrer"
-                      className="w-20 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-700 bg-white"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-400 grid place-items-center font-bold text-sm">
-                      PDF
-                    </div>
-                  )}
-                  <div className="text-start">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{file.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums" dir="ltr">
-                      {formatBytes(file.size)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFile(null);
-                      }}
-                      className="relative z-10 mt-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline"
-                    >
-                      {t.removeFile}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Live Upload Progress Bar */}
-          {busy && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-blue-700 dark:text-blue-400">{t.uploadingProgress}</span>
-                <span dir="ltr" className="tabular-nums text-slate-700 dark:text-slate-300">
-                  {progress}%
-                </span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-blue-600 transition-all duration-150"
-                  style={{ width: `${Math.max(4, Math.min(100, progress))}%` }}
-                />
-              </div>
-            </div>
-          )}
-
+        <p className="text-xs text-slate-600 dark:text-slate-300">{t.batchMetadataHint}</p>
           {/* Target Folder & Metadata */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.targetFolderLabel}
               <select
                 className="field mt-1.5"
@@ -301,7 +102,7 @@ export default function UploadView({
               </select>
             </label>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.departmentLabel}
               {departments.length > 0 ? (
                 <select
@@ -329,7 +130,7 @@ export default function UploadView({
               )}
             </label>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
               {t.classificationLabel} ({t.optional})
               {categories.length > 0 ? (
                 <select
@@ -357,18 +158,32 @@ export default function UploadView({
               )}
             </label>
 
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t.keywordsCommaLabel}
-              <input
-                className="field mt-1.5"
-                placeholder={t.keywordPlaceholder}
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-              />
-            </label>
+            <div>
+              <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
+                {t.keywordsCommaLabel}
+                <input
+                  className="field mt-1.5"
+                  placeholder={t.keywordPlaceholder}
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                />
+              </label>
+              {parsedKeywordTags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {parsedKeywordTags.map((tag, idx) => (
+                    <span
+                      key={`${tag}-${idx}`}
+                      className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-brand-50 dark:bg-[#132942] text-[#0E7490] dark:text-[#22D3EE] border border-brand-200/80 dark:border-[#0891B2]/30"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+          <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
             {t.notesSummaryLabel} ({t.optional})
             <textarea
               rows={3}
@@ -378,19 +193,22 @@ export default function UploadView({
             />
           </label>
 
-          {error && (
-            <p role="alert" className="rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 px-4 py-2.5 text-xs font-medium text-rose-700 dark:text-rose-300">
-              {error}
-            </p>
-          )}
 
-          <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-            <button type="submit" disabled={busy || !file} className="btn btn-primary px-6">
-              {busy ? `${t.uploadingProgress} (${progress}%)` : t.uploadSubmit}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
+        {error && <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">{error}</p>}
+        {files.length > 0 && <ul className="max-h-64 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800" aria-label={t.chooseFiles}>
+          {files.map((file) => { const key = fileKey(file), task = tasks[key]; return <li key={key} className="py-3 flex items-center gap-3 text-sm">
+            <AppIcon name="file" size={20} className="text-brand-600 shrink-0" />
+            <div className="min-w-0 flex-1"><p className="truncate" dir="auto">{file.webkitRelativePath || file.name}</p>
+              <p className="text-xs text-slate-500" dir="ltr">{formatBytes(file.size)}{task ? ` · ${task.progress}%` : ''}</p>
+              {busy && task && <progress aria-label={file.name} value={task.progress} max={100} className="w-full accent-brand-600" />}
+              {task?.error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-300">{task.error}</p>}
+            </div>
+            <button type="button" className="btn btn-secondary p-2" aria-label={`${t.removeFile}: ${file.name}`} onClick={() => setFiles((prev) => prev.filter((item) => item !== file))}><AppIcon name="x" size={15} /></button>
+          </li>; })}
+        </ul>}
+        {done > 0 && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t.uploadSuccess}: {done}</p>}
+        <button type="submit" disabled={busy || !files.length} className="btn btn-primary w-full sm:w-auto"><AppIcon name="upload" size={17} />{busy ? t.uploadingProgress : t.uploadSubmit}{files.length ? ` (${files.length})` : ''}</button>
+      </fieldset>
+    </form>
+  </div>;
 }

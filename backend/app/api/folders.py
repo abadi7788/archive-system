@@ -21,6 +21,8 @@ from app.models.document import Document
 from app.models.folder import Folder, FolderGrant
 from app.models.user import User, UserRole
 
+from app.services.names import validate_name, available_name
+
 router = APIRouter()
 
 
@@ -144,10 +146,12 @@ async def create_folder(
             )
         ):
             raise HTTPException(403, "Write access to parent folder required")
+    name = validate_name(payload.name)
+    await available_name(db, "folder", name, parent.id if parent else None, user.id)
     path = (parent.path.rstrip("/") + "/" + parent.name) if parent else "/"
     now = datetime.now(timezone.utc)
     folder = Folder(
-        name=payload.name.strip(),
+        name=name,
         parent_id=parent.id if parent else None,
         owner_id=user.id,
         path=path or "/",
@@ -156,6 +160,9 @@ async def create_folder(
     if parent:
         parent.updated_at = now
     db.add(folder)
+    await db.flush()
+    db.add(AuditLog(actor_id=user.id, action="folder.created", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None}))
     await db.commit()
     await db.refresh(folder)
     display_name = (user.full_name or "").strip() or user.username
@@ -182,13 +189,14 @@ async def update_folder(
     user: Annotated[User, Depends(current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    folder = await db.get(Folder, folder_id)
+    folder = await db.scalar(select(Folder).where(Folder.id == folder_id).with_for_update())
     if not folder or folder.deleted_at is not None:
         raise HTTPException(404, "Folder not found")
     if user.role != UserRole.ADMIN and (user.role == UserRole.VIEWER or folder.owner_id != user.id):
         raise HTTPException(403, "Only folder owner or administrator can edit folders")
+    old_name = folder.name
     if payload.name is not None:
-        folder.name = payload.name.strip()
+        folder.name = validate_name(payload.name)
     if "parent_id" in payload.model_fields_set:
         if payload.parent_id is None:
             folder.parent_id = None
@@ -206,7 +214,21 @@ async def update_folder(
                 raise HTTPException(403, "Write access to target folder required")
             folder.parent_id = new_parent.id
             folder.path = new_parent.path.rstrip("/") + "/" + new_parent.name
+    await available_name(db, "folder", folder.name, folder.parent_id, folder.owner_id, folder.id)
+    if old_name != folder.name:
+        # Refresh stored descendant paths; document breadcrumbs are calculated dynamically.
+        all_folders = (await db.scalars(select(Folder))).all()
+        by_id = {f.id: f for f in all_folders}
+        def path_of(item, seen=None):
+            seen = set() if seen is None else seen
+            if item.id in seen or not item.parent_id or item.parent_id not in by_id: return "/"
+            seen.add(item.id)
+            parent = by_id[item.parent_id]
+            return path_of(parent, seen).rstrip("/") + "/" + parent.name
+        for item in all_folders: item.path = path_of(item)
     folder.updated_at = datetime.now(timezone.utc)
+    db.add(AuditLog(actor_id=user.id, action="folder.renamed" if old_name != folder.name else "folder.updated", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None, **({"old_name": old_name, "new_name": folder.name} if old_name != folder.name else {})}))
     await db.commit()
     await db.refresh(folder)
     return {
@@ -267,7 +289,7 @@ async def delete_folder(
 async def set_grant(
     folder_id: uuid.UUID,
     payload: GrantCreate,
-    _: Annotated[User, Depends(admin_user)],
+    actor: Annotated[User, Depends(admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     folder = await db.get(Folder, folder_id)
@@ -282,6 +304,8 @@ async def set_grant(
         grant.permission = payload.permission
     else:
         db.add(FolderGrant(folder_id=folder_id, user_id=payload.user_id, permission=payload.permission))
+    db.add(AuditLog(actor_id=actor.id, action="folder.permissions_updated", resource_type="folder", resource_id=str(folder.id),
+                    detail={"name": folder.name, "user_id": str(payload.user_id), "permission": payload.permission}))
     await db.commit()
     return {"folder_id": str(folder_id), "user_id": str(payload.user_id), "permission": payload.permission}
 

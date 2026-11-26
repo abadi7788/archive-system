@@ -23,3 +23,7 @@ __all__ = [
     "EmployeeLinkGroup",
     "EmployeeLinkMember",
 ]
+
+from app.models.gemini_usage import GeminiUsage
+
+from app.models.upload_session import UploadSession

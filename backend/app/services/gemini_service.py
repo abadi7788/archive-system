@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.security import decrypt_secret
 from app.db import SessionLocal
 from app.models.system_api_key import SystemAPIKey
+from app.services.gemini_usage import reserve_request, mark_exhausted, mark_disabled
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +62,12 @@ def _is_quota_error(exc: Exception) -> bool:
 
 
 async def load_active_db_gemini_keys() -> list[tuple[str, str]]:
-    """Load active encrypted system Gemini keys from PostgreSQL ordered by priority."""
+    """Load ordered system keys, retaining disabled fingerprints to suppress duplicate env fallback."""
     try:
         async with SessionLocal() as session:
             rows = (
                 await session.scalars(
                     select(SystemAPIKey)
-                    .where(SystemAPIKey.is_active.is_(True))
                     .order_by(SystemAPIKey.priority.asc())
                 )
             ).all()
@@ -80,7 +80,7 @@ async def load_active_db_gemini_keys() -> list[tuple[str, str]]:
         try:
             plaintext = decrypt_secret(row.key_encrypted).strip()
             if plaintext:
-                resolved.append((f"db-{row.label}", plaintext))
+                resolved.append((f"db-{row.label}" if row.is_active else f"disabled-{row.id}", plaintext))
         except ValueError:
             logger.warning("Ignoring an unreadable encrypted database Gemini credential (%s)", row.label)
     return resolved
@@ -119,7 +119,9 @@ class GeminiOCRService:
 
         if db_keys:
             for label, key in db_keys:
-                if key:
+                if label.startswith('disabled-'):
+                    seen_values.add(key.strip())
+                elif key:
                     append_unique(label, key)
 
         for idx, value in enumerate(settings.system_gemini_keys, 1):
@@ -131,6 +133,8 @@ class GeminiOCRService:
         cleaned = (api_key or "").strip()
         if not cleaned:
             return False, "لا يوجد مفتاح مضبوط للاختبار."
+        if not await reserve_request(cleaned):
+            return False, "المفتاح وصل للحد اليومي المحدد في النظام."
         client = genai.Client(api_key=cleaned, http_options=types.HttpOptions(timeout=15000))
         try:
             await asyncio.wait_for(
@@ -144,6 +148,7 @@ class GeminiOCRService:
             return True, "تم التحقق من الاتصال بنجاح والمفتاح يعمل بشكل سليم."
         except Exception as exc:
             if _is_quota_error(exc):
+                await mark_exhausted(cleaned)
                 return False, "المفتاح صالح لكنه وصل إلى حد الاستخدام المؤقت."
             logger.warning("Gemini key connectivity test failed (%s)", type(exc).__name__)
             return False, "تعذر الاتصال بالمفتاح المدخل. يرجى التأكد من صحة المفتاح وصلاحياته."
@@ -177,6 +182,8 @@ class GeminiOCRService:
         attempted: list[str] = []
         for key in keys:
             attempted.append(key.label)
+            if system_keys is None and not await reserve_request(key.value):
+                continue
             client = genai.Client(api_key=key.value, http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)))
             try:
                 response = await asyncio.wait_for(
@@ -198,7 +205,13 @@ class GeminiOCRService:
                 return result
             except Exception as exc:
                 if _is_quota_error(exc):
+                    if system_keys is None:
+                        await mark_exhausted(key.value)
                     logger.info("Gemini quota exhausted for key tier %s; trying next configured tier", key.label)
+                    continue
+                if str(getattr(exc, "code", "")) in {"401", "403"} or "api_key_invalid" in str(exc).lower():
+                    if system_keys is None:
+                        await mark_disabled(key.value)
                     continue
                 logger.warning("Gemini OCR request failed for key tier %s (%s)", key.label, type(exc).__name__)
                 raise GeminiRequestFailed(f"Gemini OCR failed using key tier {key.label}") from exc
@@ -241,6 +254,8 @@ class GeminiOCRService:
         )
         for key in keys:
             attempted.append(key.label)
+            if system_keys is None and not await reserve_request(key.value):
+                continue
             client = genai.Client(api_key=key.value, http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)))
             try:
                 response = await asyncio.wait_for(
@@ -257,7 +272,13 @@ class GeminiOCRService:
                 return {"answer": answer, "processed_by_key": key.label}
             except Exception as exc:
                 if _is_quota_error(exc):
+                    if system_keys is None:
+                        await mark_exhausted(key.value)
                     logger.info("Gemini quota exhausted for key tier %s; trying next configured tier", key.label)
+                    continue
+                if str(getattr(exc, "code", "")) in {"401", "403"} or "api_key_invalid" in str(exc).lower():
+                    if system_keys is None:
+                        await mark_disabled(key.value)
                     continue
                 raise GeminiRequestFailed(f"Document chat failed using key tier {key.label}") from exc
             finally:

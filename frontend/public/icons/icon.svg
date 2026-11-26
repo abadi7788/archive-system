@@ -1,14 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="g" x1="7" y1="5" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#11b7c1"/>
-      <stop offset=".52" stop-color="#087fb9"/>
-      <stop offset="1" stop-color="#194c9d"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="19" fill="url(#g)"/>
-  <path d="M17 13.5A4.5 4.5 0 0 1 21.5 9h16l9.5 9.5v31a4.5 4.5 0 0 1-4.5 4.5h-21a4.5 4.5 0 0 1-4.5-4.5v-36Z" fill="#fff"/>
-  <path d="M37.5 9v10h9.2M24 27h17M24 33.5h17M24 40h9" fill="none" stroke="#087da9" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="44.5" cy="46.5" r="11.5" fill="#05a995" stroke="#fff" stroke-width="2.5"/>
-  <path d="m39.5 46.5 3.2 3.2 6.8-7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+ <defs>
+  <linearGradient id="tile" x1="22" y1="12" x2="232" y2="256" gradientUnits="userSpaceOnUse"><stop stop-color="#155E75"/><stop offset=".52" stop-color="#0F2137"/><stop offset="1" stop-color="#0A1626"/></linearGradient>
+  <linearGradient id="paper" x1="85" y1="45" x2="163" y2="168" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#CFFAFE"/></linearGradient>
+  <linearGradient id="box" x1="56" y1="136" x2="190" y2="216" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#C8E4ED"/></linearGradient>
+  <linearGradient id="gold" x1="142" y1="172" x2="223" y2="218" gradientUnits="userSpaceOnUse"><stop stop-color="#FDE6AB"/><stop offset="1" stop-color="#D9A64B"/></linearGradient>
+ </defs>
+ <rect width="256" height="256" rx="56" fill="url(#tile)"/>
+ <rect x="9" y="9" width="238" height="238" rx="49" stroke="#67E8F9" stroke-opacity=".16" stroke-width="2"/>
+ <path d="M42 100h25m122-22h24m-1 0V56h-17M44 171H30v-36" stroke="#22D3EE" stroke-opacity=".28" stroke-width="3" stroke-linecap="round"/>
+ <g transform="rotate(-12 117 112)"><rect x="65" y="62" width="99" height="115" rx="9" fill="#7CC1D0"/></g>
+ <g transform="rotate(8 137 105)"><rect x="90" y="44" width="91" height="125" rx="9" fill="url(#paper)"/><path d="M106 69h45m-45 15h56m-56 15h42" stroke="#0E7490" stroke-opacity=".55" stroke-width="6" stroke-linecap="round"/></g>
+ <path d="M52 130h144l-12 73a10 10 0 0 1-10 9H74a10 10 0 0 1-10-9l-12-73Z" fill="url(#box)"/>
+ <rect x="45" y="121" width="158" height="24" rx="7" fill="#fff"/>
+ <rect x="101" y="162" width="46" height="18" rx="5" fill="#0E7490"/><path d="M113 171h22" stroke="#CFFAFE" stroke-width="3" stroke-linecap="round"/>
+ <rect x="162" y="56" width="60" height="49" rx="13" fill="#0E7490" stroke="#67E8F9" stroke-width="2"/>
+ <path d="m174 90 8-20 8 20m-13-6h10m13-14v20" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+ <path d="M211 45v10m-5-5h10" stroke="#A5F3FC" stroke-width="2.5" stroke-linecap="round"/>
+ <path d="m174 191 36-36 10 10-8 8 6 6-9 9-6-6-19 19" fill="url(#gold)" stroke="#0F2137" stroke-width="3" stroke-linejoin="round"/>
+ <circle cx="171" cy="202" r="22" fill="url(#gold)" stroke="#0F2137" stroke-width="3"/><circle cx="168" cy="205" r="8" fill="#0F2137"/>
 </svg>

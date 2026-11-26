@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,7 +13,7 @@ from app.models.user import User, UserRole
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
-async def current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annotated[AsyncSession, Depends(get_db)]) -> User:
+async def current_user(request: Request, token: Annotated[str, Depends(oauth2_scheme)], db: Annotated[AsyncSession, Depends(get_db)]) -> User:
     try:
         user_id = uuid.UUID(decode_access_token(token)["sub"])
     except (ValueError, KeyError, TypeError):
@@ -21,6 +21,10 @@ async def current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annota
     user = await db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
     if not user:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    from app.services.audit_context import request_audit
+    context = request_audit.get()
+    if context is not None:
+        context.update(actor_id=user.id, actor_name=user.full_name or user.username)
     return user
 
 

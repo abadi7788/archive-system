@@ -7,25 +7,37 @@
   --surface-canvas: #F1F5F9;
   --surface-card: #FFFFFF;
   --surface-subtle: #F8FAFC;
-  --border-subtle: rgba(226, 232, 240, 0.85);
+  --surface-muted: #E2E8F0;
+  --border-subtle: #E2E8F0;
   --border-strong: #CBD5E1;
-  --ink-primary: #0F172A;
+  --ink-primary: #0F2137;
   --ink-secondary: #475569;
-  --brand-primary: #2563EB;
-  --brand-hover: #1D4ED8;
+  --brand-primary: #0E7490;
+  --brand-hover: #155E75;
+  --brand-accent: #0891B2;
+  --sidebar-start: #0F2137;
+  --sidebar-end: #102438;
+  --shadow-card: 0 1px 2px rgba(15, 33, 55, 0.04), 0 6px 18px -12px rgba(15, 33, 55, 0.09);
+  --shadow-elevated: 0 24px 56px -20px rgba(15, 33, 55, 0.22), 0 4px 14px -4px rgba(15, 33, 55, 0.06);
 }
 
 .dark {
   color-scheme: dark;
-  --surface-canvas: #0B1120;
-  --surface-card: #0F172A;
-  --surface-subtle: #1E293B;
-  --border-subtle: rgba(51, 65, 85, 0.72);
-  --border-strong: #334155;
+  --surface-canvas: #0A1626;
+  --surface-card: #0F2137;
+  --surface-subtle: #132942;
+  --surface-muted: #183350;
+  --border-subtle: rgba(148, 163, 184, 0.15);
+  --border-strong: rgba(148, 163, 184, 0.25);
   --ink-primary: #F8FAFC;
   --ink-secondary: #94A3B8;
-  --brand-primary: #3B82F6;
-  --brand-hover: #2563EB;
+  --brand-primary: #0891B2;
+  --brand-hover: #0E7490;
+  --brand-accent: #22D3EE;
+  --sidebar-start: #0B192B;
+  --sidebar-end: #0F2137;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 28px -16px rgba(0, 0, 0, 0.55);
+  --shadow-elevated: 0 28px 64px -20px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(148, 163, 184, 0.1);
 }
 
 * {
@@ -40,38 +52,115 @@ body {
   margin: 0;
   background-color: var(--surface-canvas);
   color: var(--ink-primary);
-  font-family: var(--font-ibm-plex-arabic), "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
-  font-feature-settings: "kern";
+  font-family: "Tajawal", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-feature-settings: "kern", "cv02", "cv03";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Enterprise surface cards */
+/* Architectural vault canvas for login, onboarding & shared document portals */
+.auth-canvas {
+  position: relative;
+  background-color: #F1F5F9;
+  background-image:
+    radial-gradient(ellipse 75% 50% at 50% -10%, rgba(14, 116, 144, 0.13), transparent 65%),
+    radial-gradient(ellipse 55% 45% at 92% 100%, rgba(8, 145, 178, 0.08), transparent 60%),
+    radial-gradient(ellipse 50% 45% at 8% 95%, rgba(15, 33, 55, 0.06), transparent 60%),
+    linear-gradient(to right, rgba(15, 33, 55, 0.032) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 33, 55, 0.032) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 42px 42px, 42px 42px;
+}
+
+.dark .auth-canvas {
+  background-color: #081321;
+  background-image:
+    radial-gradient(ellipse 75% 50% at 50% -10%, rgba(8, 145, 178, 0.22), transparent 65%),
+    radial-gradient(ellipse 55% 45% at 92% 100%, rgba(14, 116, 144, 0.14), transparent 60%),
+    linear-gradient(to right, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 42px 42px, 42px 42px;
+}
+
+/* Sovereign Calm Dark Navy Sidebar (#0F2137 -> #102438) with subtle Petrol top aura */
+.sidebar-navy {
+  background:
+    radial-gradient(ellipse 95% 28% at 50% 0%, rgba(8, 145, 178, 0.18), transparent 72%),
+    linear-gradient(180deg, #0F2137 0%, #102438 100%);
+}
+
+/* Deep Navy Showcase Panel (for Login Split Portal) */
+.vault-showcase {
+  background:
+    radial-gradient(circle at 18% 15%, rgba(8, 145, 178, 0.26), transparent 48%),
+    radial-gradient(circle at 88% 88%, rgba(14, 116, 144, 0.24), transparent 52%),
+    linear-gradient(155deg, #0F2137 0%, #102438 55%, #0C1B2E 100%);
+}
+
+/* Subtle dot-grid backdrop for document preview viewports */
+.preview-grid {
+  background-color: #F8FAFC;
+  background-image: radial-gradient(rgba(15, 33, 55, 0.11) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.dark .preview-grid {
+  background-color: #091524;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Crisp White Cards with Thin Borders on #F1F5F9 Light Workspace */
 .card {
   background-color: var(--surface-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.875rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
-  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  border-radius: 0.9375rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.dark .card {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.36);
+.card-interactive:hover {
+  border-color: rgba(14, 116, 144, 0.32);
+  box-shadow: 0 6px 20px -8px rgba(14, 116, 144, 0.14), 0 1px 3px rgba(15, 33, 55, 0.04);
 }
 
-/* Clean form inputs with proper light & dark mode contrast */
+.dark .card-interactive:hover {
+  border-color: rgba(8, 145, 178, 0.45);
+}
+
+.card-elevated {
+  background-color: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Refined Form Inputs with Calm Petrol Focus Halo */
 .field {
   width: 100%;
   min-height: 2.625rem;
   border: 1px solid var(--border-strong);
-  border-radius: 0.625rem;
+  border-radius: 0.75rem;
   padding-block: 0.5625rem;
-  padding-inline: 0.875rem;
+  padding-inline: 0.9375rem;
   font-size: 0.875rem;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--ink-primary);
   background-color: var(--surface-card);
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  box-shadow: 0 1px 1px rgba(15, 33, 55, 0.02);
+  transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.field:hover:not(:disabled):not(:focus) {
+  border-color: #94A3B8;
+}
+
+.dark .field:hover:not(:disabled):not(:focus) {
+  border-color: rgba(148, 163, 184, 0.38);
 }
 
 .field::placeholder {
@@ -83,8 +172,13 @@ body {
 }
 
 .field:focus {
-  border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  border-color: #0E7490;
+  box-shadow: 0 0 0 3.5px rgba(14, 116, 144, 0.16);
+}
+
+.dark .field:focus {
+  border-color: #22D3EE;
+  box-shadow: 0 0 0 3.5px rgba(8, 145, 178, 0.25);
 }
 
 .field-icon-start {
@@ -95,25 +189,30 @@ body {
   padding-inline-end: 2.85rem;
 }
 
-/* Enterprise Buttons */
+/* Executive Buttons — Calm Petrol (#0E7490 -> Hover #155E75, Accent #0891B2) */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.625rem;
-  padding: 0.5625rem 1rem;
+  border-radius: 0.75rem;
+  padding: 0.5625rem 1.0625rem;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.25;
   white-space: nowrap;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 120ms ease, box-shadow 150ms ease;
+  transition: background 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.99);
+  transform: scale(0.985);
 }
 
 .btn:focus-visible,
@@ -121,74 +220,84 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #2563EB;
+  outline: 2px solid #0891B2;
   outline-offset: 2px;
 }
 
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.52;
   cursor: not-allowed;
 }
 
 .btn-primary {
-  background-color: #2563EB;
+  background: linear-gradient(180deg, #0891B2 0%, #0E7490 100%);
   color: #FFFFFF;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+  border-color: #0E7490;
+  box-shadow: 0 1px 2px rgba(14, 116, 144, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #1D4ED8;
+  background: linear-gradient(180deg, #0E7490 0%, #155E75 100%);
+  border-color: #155E75;
+  box-shadow: 0 6px 18px -6px rgba(14, 116, 144, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
 .btn-muted {
   background-color: #FFFFFF;
-  color: #334155;
-  border-color: #E2E8F0;
+  color: #0F2137;
+  border-color: #CBD5E1;
+  box-shadow: 0 1px 2px rgba(15, 33, 55, 0.03);
 }
 
 .btn-muted:hover:not(:disabled) {
   background-color: #F8FAFC;
-  border-color: #CBD5E1;
-  color: #0F172A;
+  border-color: #94A3B8;
+  color: #0F2137;
 }
 
 .dark .btn-muted {
-  background-color: #1E293B;
+  background-color: #132942;
   color: #E2E8F0;
-  border-color: #334155;
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .dark .btn-muted:hover:not(:disabled) {
-  background-color: #273449;
-  border-color: #475569;
+  background-color: #1A3554;
+  border-color: rgba(148, 163, 184, 0.36);
   color: #FFFFFF;
 }
 
 .btn-danger {
-  background-color: #DC2626;
+  background: linear-gradient(180deg, #E11D48 0%, #BE123C 100%);
   color: #FFFFFF;
+  border-color: rgba(190, 18, 60, 0.9);
+  box-shadow: 0 1px 2px rgba(190, 18, 60, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background-color: #B91C1C;
+  background: linear-gradient(180deg, #BE123C 0%, #9F1239 100%);
 }
 
-/* Brand mark */
+/* Sovereign Brand Crest — Petrol & Deep Navy */
 .brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  border-radius: 0.75rem;
-  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  border-radius: 0.875rem;
+  background: linear-gradient(145deg, #0891B2 0%, #0E7490 54%, #0F2137 100%);
+  box-shadow:
+    0 8px 20px -6px rgba(14, 116, 144, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(15, 33, 55, 0.35);
 }
 
 .brand-mark-compact {
-  border-radius: 0.625rem;
+  border-radius: 0.6875rem;
 }
 
-/* Toast entrance animation (compositor-only) */
+/* Toast entrance animation */
 @keyframes toast-in {
   from {
     opacity: 0;
@@ -204,32 +313,32 @@ textarea:focus-visible {
   animation: toast-in 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Subtle custom scrollbars */
+/* Selection & Scrollbars */
 ::selection {
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(14, 116, 144, 0.18);
   color: inherit;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: rgba(100, 116, 139, 0.38);
   border-radius: 99px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(148, 163, 184, 0.28);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(14, 116, 144, 0.62);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -242,7 +351,7 @@ textarea:focus-visible {
   }
 }
 
-/* Enforce admin print restriction if a user triggers browser print manually */
+/* Enforce admin print restriction in the user's active language */
 @media print {
   html.print-blocked body * {
     display: none !important;
@@ -255,7 +364,137 @@ textarea:focus-visible {
     padding: 3rem;
     font-size: 1rem;
     font-weight: 600;
-    color: #0F172A;
+    color: #0F2137;
     text-align: center;
   }
+  html[lang="ar"].print-blocked body::before {
+    content: "الطباعة مقيّدة وفق سياسة إدارة النظام.";
+    direction: rtl;
+  }
+}
+
+/* Dense workspace: readable Arabic metadata and bounded independent scroll panes. */
+html, body { max-width: 100%; overflow-x: clip; }
+body { font-weight: 500; }
+input, select, textarea, button { font: inherit; }
+.iso-date { direction: ltr; unicode-bidi: isolate; text-align: left; font-variant-numeric: tabular-nums; font-family: "Plus Jakarta Sans", sans-serif; }
+.file-list-scroll thead { position: sticky; top: 0; z-index: 2; background: var(--surface-subtle); }
+.file-list-scroll { scrollbar-gutter: stable; }
+.archive-workspace table { min-width: 640px; }
+@media (max-width: 639px) {
+  .archive-summary > div { padding: .55rem .65rem; }
+  .archive-summary > div > span { display: none; }
+  .archive-summary { gap: .4rem; }
+  .archive-search { max-height: 42dvh; }
+}
+@media (max-height: 650px) { .archive-summary { display: none; } }
+@media (max-width: 639px) {
+  .archive-workspace table { min-width: 0; width: 100%; table-layout: fixed; }
+  .archive-workspace table th:first-child { width: 30px; }
+  .archive-workspace table th:last-child { width: 66px; }
+  .archive-workspace table th:nth-last-child(2),
+  .archive-workspace table td:nth-last-child(2) { display: none; }
+  .archive-workspace table td, .archive-workspace table th { padding-inline: .4rem; }
+}
+
+/* Unified archive identity: same navy / petrol palette, architectural proportions. */
+.brand-mark { background: none; box-shadow: none; border-radius: 22%; overflow: hidden; flex-shrink: 0; }
+.brand-mark img { display: block; width: 100%; height: 100%; }
+.login-screen { background: var(--surface-card); }
+.login-portal { min-height: 100svh; min-height: 100dvh; }
+.login-identity { padding: clamp(28px, 3.5vw, 64px); min-width: 0; }
+.login-identity::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(135deg, transparent 49.8%, rgba(103,232,249,.035) 50%, transparent 50.2%); background-size: 110px 110px; }
+.login-form-panel { padding: 32px clamp(28px, 4vw, 80px); display: flex; flex-direction: column; min-width: 0; }
+.login-preferences { width: 100%; max-width: 480px; margin-inline: auto; }
+.login-credentials { width: 100%; max-width: 420px; margin: auto; padding-block: 56px 96px; }
+.login-form .field { min-height: 56px; border-radius: 12px; background-color: var(--surface-subtle); }
+.login-form .btn-primary { min-height: 54px; border-radius: 12px; margin-top: 12px; }
+.login-install { margin-top: 24px; }
+.login-install:empty { display: none; }
+/* Pointer tilt is decorative; the same interaction is available via keyboard buttons. */
+.login-showcase { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-block: 12px; }
+.showcase-scene { width: 100%; max-width: 560px; aspect-ratio: 1.2; position: relative; perspective: 1000px; }
+.showcase-stage { position: absolute; inset: 0; transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)); transition: transform 240ms ease-out; }
+.showcase-halo { position: absolute; inset: 8% 10%; border-radius: 50%; background: radial-gradient(ellipse, #0891B22B, transparent 68%); }
+.showcase-orbit { position: absolute; width: 76%; aspect-ratio: 1; inset: 7% 12% auto; border: 1px solid #67E8F91A; border-radius: 50%; }
+.showcase-emblem { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%) rotate(-7deg); box-shadow: 0 28px 50px -20px #0009; border-radius: 44px; transition: transform 600ms cubic-bezier(.2,.7,.2,1), box-shadow 600ms ease; }
+.showcase-paper { position: absolute; inset: 50% auto auto 50%; width: 136px; height: 176px; border: 1px solid #67E8F933; border-radius: 16px; color: #A5F3FC99; background: linear-gradient(145deg, #23445B, #152C45); box-shadow: 0 20px 40px #0002; padding: 20px; transition: transform 600ms cubic-bezier(.2,.7,.2,1), border-color 600ms ease, opacity 600ms ease; }
+.showcase-paper span { display: block; height: 5px; margin-top: 14px; border-radius: 9px; background: #A5F3FC38; transition: background 400ms ease; }
+.showcase-paper span:last-child { width: 60%; }
+.showcase-paper-back { transform: translate(-2%, -100%) rotate(15deg); }
+.showcase-paper-front { transform: translate(-130%, -20%) rotate(-19deg); }
+.showcase-node { position: absolute; width: 54px; height: 54px; border-radius: 17px; border: 1px solid #67E8F933; display: grid; place-items: center; color: #A5F3FC99; background: #102C40; box-shadow: 0 12px 26px #0002; transition: background 400ms ease, color 400ms ease, transform 400ms ease, border-color 400ms ease; }
+.showcase-node-folder { left: 13%; top: 17%; }
+.showcase-node-search { right: 10%; top: 45%; }
+.showcase-node-shield { left: 61%; bottom: 8%; }
+.workspace-sidebar { overflow: hidden; }
+.workspace-sidebar nav button { min-height: 40px; border-radius: 10px; }
+.workspace-sidebar nav button[aria-current="page"] { box-shadow: inset 0 0 0 1px #67E8F92A; }
+.workspace-header { margin-inline: 0; }
+.archive-summary { border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-card); overflow: hidden; gap: 0 !important; box-shadow: var(--shadow-card); }
+.archive-summary > .card { box-shadow: none; border: 0; border-inline-end: 1px solid var(--border-subtle); border-radius: 0; background: transparent; padding-block: 18px; }
+.archive-summary > .card:last-child { border-inline-end: 0; }
+.archive-search { box-shadow: none; }
+.file-list-scroll tbody tr { transition: background-color 120ms ease; }
+.file-list-scroll thead th { padding-block: 14px; font-size: 12px; }
+@media (min-width: 1024px) {
+  .workspace-shell { padding: 12px; gap: 8px; }
+  .desktop-sidebar { height: 100%; }
+  .workspace-sidebar { border-radius: 18px; border: 1px solid #ffffff0F; box-shadow: 0 12px 28px -16px #0F213766; }
+  .workspace-header { border: 1px solid var(--border-subtle); border-radius: 16px; margin-inline: 12px; }
+}
+@media (max-width: 1023px) {
+  .login-portal { grid-template-rows: auto 1fr; }
+  .login-identity { padding: 24px 28px; }
+  .login-showcase { display: none; }
+  .login-form-panel { padding: 24px 28px 28px; }
+  .login-preferences { max-width: 420px; }
+  .login-credentials { padding-block: 40px; }
+}
+@media (max-width: 639px) {
+  .archive-summary > .card { padding: .65rem; }
+  .archive-summary > .card:nth-child(2) { border-inline-end: 0; }
+  .archive-summary > .card:nth-child(-n+2) { border-bottom: 1px solid var(--border-subtle); }
+  .workspace-header { gap: 8px; padding-inline: 12px; min-height: 64px; }
+  .workspace-header > div { gap: 6px; }
+  .workspace-header .btn { padding: 8px; }
+}
+@media (max-width: 359px) {
+  .login-identity, .login-form-panel { padding: 22px 20px; }
+  .login-identity h2 { font-size: 18px; }
+}
+
+@media (min-width: 1024px) and (max-height: 720px) {
+  .login-identity { padding-block: 24px; }
+  .showcase-scene { max-width: 400px; }
+  .login-credentials { padding-block: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .showcase-stage { transform: none !important; }
+  .login-showcase *, .login-showcase *::after { transition: none !important; }
+}
+
+/* One navy frame: use the exact shared sidebar background, in both themes. */
+.workspace-header, .workspace-sidebar {
+  background: radial-gradient(ellipse 95% 28% at 50% 0%, rgba(8,145,178,.18), transparent 72%), linear-gradient(180deg, #0F2137 0%, #102438 100%);
+}
+.workspace-header { border-color: #ffffff1A; color: #F1F5F9; }
+.workspace-header h1 { color: #fff; }
+.workspace-header p { color: #CBD5E1; }
+.workspace-header .btn-secondary, .workspace-header > div > button { background: #ffffff0D; border-color: #ffffff26; color: #E2E8F0; }
+.workspace-header .btn-secondary:hover, .workspace-header > div > button:hover { background: #ffffff1A; color: #fff; }
+.archive-item-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--item-size, 160px)), 1fr)); }
+.archive-grid-scroll .archive-item-grid > .card { min-width: 0; }
+.archive-grid-scroll .archive-thumbnail { height: clamp(90px, calc(var(--item-size, 160px) * .75), 210px); }
+.archive-grid-scroll .archive-thumbnail svg { width: clamp(32px, calc(var(--item-size, 160px) * .3), 80px); height: auto; }
+.archive-grid-scroll .archive-folder-icon { width: calc(var(--item-size, 160px) / 4); height: calc(var(--item-size, 160px) / 4); }
+.archive-grid-scroll .archive-folder-icon svg { width: 55%; height: 55%; }
+.file-list-scroll td:nth-child(2) > div > span:first-child { width: var(--row-icon-size, 32px); height: var(--row-icon-size, 32px); }
+.file-list-scroll td:nth-child(2) > div > span:first-child svg { width: 55%; height: 55%; }
+.archive-summary > .card { min-width: 0; }
+@media (max-width: 639px) {
+  .archive-summary > .card:nth-child(-n+2) { border-bottom: 0; }
+  .archive-summary > .card:nth-child(2) { border-inline-end: 1px solid var(--border-subtle); }
+  .archive-summary > .card > div:last-child { display: none; }
+  .archive-summary > .card { padding-inline: .6rem; }
 }
