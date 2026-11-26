@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.access import build_user_display_map, get_visible_owner_ids
@@ -12,7 +12,6 @@ from app.api.deps import admin_user, current_user
 from app.core.security import encrypt_secret, hash_password
 from app.db import get_db
 from app.models.audit_log import AuditLog
-from app.models.employee_link import EmployeeLinkGroup, EmployeeLinkMember
 from app.models.user import User, UserRole
 
 router = APIRouter()
@@ -43,11 +42,6 @@ class UserUpdate(BaseModel):
     gemini_api_key: SecretStr | None = None
 
 
-class LinkGroupPayload(BaseModel):
-    name: str = Field(min_length=1, max_length=180)
-    member_ids: list[uuid.UUID] = Field(min_length=2, max_length=100)
-
-
 def _user_dict(u: User) -> dict:
     return {
         "id": str(u.id),
@@ -70,36 +64,6 @@ def _clean_optional_text(val: str | None) -> str | None:
         return None
     stripped = val.strip()
     return stripped or None
-
-
-async def _serialize_link_groups(db: AsyncSession) -> list[dict]:
-    groups = (await db.scalars(select(EmployeeLinkGroup).order_by(EmployeeLinkGroup.created_at.desc()))).all()
-    if not groups:
-        return []
-    group_ids = [g.id for g in groups]
-    member_rows = (
-        await db.execute(
-            select(EmployeeLinkMember.group_id, EmployeeLinkMember.user_id).where(
-                EmployeeLinkMember.group_id.in_(group_ids)
-            )
-        )
-    ).all()
-    all_user_ids = {row.user_id for row in member_rows}
-    user_map = await build_user_display_map(db, all_user_ids)
-    members_by_group: dict[uuid.UUID, list[dict]] = {g.id: [] for g in groups}
-    for row in member_rows:
-        info = user_map.get(row.user_id)
-        if info:
-            members_by_group[row.group_id].append(info)
-    return [
-        {
-            "id": str(g.id),
-            "name": g.name,
-            "created_at": g.created_at.isoformat() if g.created_at else None,
-            "members": sorted(members_by_group.get(g.id, []), key=lambda m: m["display_name"].lower()),
-        }
-        for g in groups
-    ]
 
 
 @router.get("/visible-owners")
@@ -127,101 +91,10 @@ async def list_visible_owners(
     ]
 
 
-@router.get("/link-groups")
-async def list_link_groups(
-    _: Annotated[User, Depends(admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    return await _serialize_link_groups(db)
-
-
-@router.post("/link-groups", status_code=201)
-async def create_link_group(
-    payload: LinkGroupPayload,
-    actor: Annotated[User, Depends(admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    unique_ids = list(dict.fromkeys(payload.member_ids))
-    if len(unique_ids) < 2:
-        raise HTTPException(422, "Select at least two employees to link")
-    found = set((await db.scalars(select(User.id).where(User.id.in_(unique_ids)))).all())
-    if len(found) != len(unique_ids):
-        raise HTTPException(404, "One or more selected users were not found")
-    group = EmployeeLinkGroup(name=payload.name.strip(), created_by=actor.id)
-    db.add(group)
-    await db.flush()
-    for uid in unique_ids:
-        db.add(EmployeeLinkMember(group_id=group.id, user_id=uid))
-    db.add(
-        AuditLog(
-            actor_id=actor.id,
-            action="employee_link_group.created",
-            resource_type="employee_link_group",
-            resource_id=str(group.id),
-            detail={"name": group.name, "member_count": len(unique_ids)},
-        )
-    )
-    await db.commit()
-    groups = await _serialize_link_groups(db)
-    return next((g for g in groups if g["id"] == str(group.id)), {"id": str(group.id), "name": group.name, "members": []})
-
-
-@router.put("/link-groups/{group_id}")
-async def update_link_group(
-    group_id: uuid.UUID,
-    payload: LinkGroupPayload,
-    actor: Annotated[User, Depends(admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    group = await db.get(EmployeeLinkGroup, group_id)
-    if not group:
-        raise HTTPException(404, "Link group not found")
-    unique_ids = list(dict.fromkeys(payload.member_ids))
-    if len(unique_ids) < 2:
-        raise HTTPException(422, "Select at least two employees to link")
-    found = set((await db.scalars(select(User.id).where(User.id.in_(unique_ids)))).all())
-    if len(found) != len(unique_ids):
-        raise HTTPException(404, "One or more selected users were not found")
-    group.name = payload.name.strip()
-    await db.execute(delete(EmployeeLinkMember).where(EmployeeLinkMember.group_id == group_id))
-    for uid in unique_ids:
-        db.add(EmployeeLinkMember(group_id=group.id, user_id=uid))
-    db.add(
-        AuditLog(
-            actor_id=actor.id,
-            action="employee_link_group.updated",
-            resource_type="employee_link_group",
-            resource_id=str(group.id),
-            detail={"name": group.name, "member_count": len(unique_ids)},
-        )
-    )
-    await db.commit()
-    groups = await _serialize_link_groups(db)
-    return next((g for g in groups if g["id"] == str(group.id)), {"id": str(group.id), "name": group.name, "members": []})
-
-
-@router.delete("/link-groups/{group_id}", status_code=204)
-async def delete_link_group(
-    group_id: uuid.UUID,
-    actor: Annotated[User, Depends(admin_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    group = await db.get(EmployeeLinkGroup, group_id)
-    if not group:
-        raise HTTPException(404, "Link group not found")
-    name = group.name
-    await db.delete(group)
-    db.add(
-        AuditLog(
-            actor_id=actor.id,
-            action="employee_link_group.deleted",
-            resource_type="employee_link_group",
-            resource_id=str(group_id),
-            detail={"name": name},
-        )
-    )
-    await db.commit()
-    return Response(status_code=204)
+@router.api_route('/link-groups', methods=['GET', 'POST'])
+@router.api_route('/link-groups/{group_id}', methods=['PUT', 'DELETE'])
+async def retired_link_groups(_: Annotated[User, Depends(admin_user)]):
+    raise HTTPException(410, "Use independent employee relationships instead of link groups")
 
 
 @router.post("", status_code=201)

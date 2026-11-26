@@ -2,15 +2,17 @@
 import React, { FormEvent, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import type { TranslationKeys } from '../lib/i18n';
-import { droppedFiles, isAllowedUploadFile, UPLOAD_ACCEPT } from '../lib/uploads';
+import { droppedFiles, relativeUploadPath, importDirectoryPaths, isAllowedUploadFile, UPLOAD_ACCEPT } from '../lib/uploads';
 import { DocItem, FolderItem, User, formatBytes } from './types';
 
 type Payload = { file: File; folderId: string; department: string; classification: string; keywords: string; summary: string };
-export default function UploadView({ user, folders, departments, categories, defaultFolderId, t, onUpload, onGoArchive, onFinished }: {
+export default function UploadView({ user, folders, departments, categories, defaultFolderId, t, onUpload, onGoArchive, onFinished, onCreateDirectories }: {
   user: User; folders: FolderItem[]; departments: string[]; categories: string[]; defaultFolderId: string; t: TranslationKeys;
   onUpload: (payload: Payload, onProgress: (percent: number) => void) => Promise<DocItem>;
+  onCreateDirectories: (paths: string[][], folderId: string) => Promise<void>;
   onGoArchive: (folderId?: string) => void; onFinished: () => Promise<void>;
 }) {
+  const [directories, setDirectories] = useState<string[][]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [folderId, setFolderId] = useState(defaultFolderId || '');
   const [department, setDepartment] = useState(user.department || '');
@@ -21,26 +23,31 @@ export default function UploadView({ user, folders, departments, categories, def
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(0);
+  const [directoriesDone, setDirectoriesDone] = useState(false);
   const [tasks, setTasks] = useState<Record<string, { progress: number; error?: string; done?: boolean }>>({});
   const fileInput = useRef<HTMLInputElement>(null);
   const directoryInput = useRef<HTMLInputElement>(null);
   const writableFolders = folders.filter((f) => f.can_manage !== false);
   const parsedKeywordTags = useMemo(() => keywords.split(',').map((k) => k.trim()).filter(Boolean).slice(0, 12), [keywords]);
-  const fileKey = (file: File) => `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`;
+  const fileKey = (file: File) => `${relativeUploadPath(file)}:${file.size}:${file.lastModified}`;
 
   function addFiles(candidates: File[]) {
     if (busy) return;
+    const paths = importDirectoryPaths(candidates);
+    if (paths.length) setDirectories(previous => Array.from(new Map([...previous, ...paths].map(path => [path.join('/'), path])).values()));
     const valid = candidates.filter(isAllowedUploadFile);
     setError(valid.length !== candidates.length ? t.unsupportedFiles : '');
-    setDone(0);
+    setDone(0); setDirectoriesDone(false);
     setFiles((previous) => Array.from(new Map([...previous, ...valid].map((file) => [fileKey(file), file])).values()));
   }
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!files.length || busy) return;
+    if ((!files.length && !directories.length) || busy) return;
     setBusy(true); setError('');
     // Snapshot common metadata for the entire batch; fields are disabled while uploading.
     const options = { folderId, department, classification, keywords, summary };
+    try { await onCreateDirectories(directories, folderId); setDirectories([]); }
+    catch (failure: any) { setError(failure.message || t.errorGeneric); setBusy(false); return; }
     let completed = 0;
     const failed: File[] = [];
     for (const file of files) {
@@ -55,8 +62,8 @@ export default function UploadView({ user, folders, departments, categories, def
         setTasks((previous) => ({ ...previous, [key]: { progress: 0, error: failure.message || t.errorGeneric } }));
       }
     }
-    setDone(completed);
-    if (completed) await onFinished().catch(() => {});
+    setDone(completed); setDirectoriesDone(directories.length > 0);
+    if (completed || directories.length) await onFinished().catch(() => {});
     setFiles(failed); // Retrying failures never uploads successful files a second time.
     setBusy(false);
   }
@@ -195,10 +202,11 @@ export default function UploadView({ user, folders, departments, categories, def
 
 
         {error && <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">{error}</p>}
+        {directories.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 dark:bg-navy-deep p-3 text-xs"><span>{directories.length} · {t.foldersTitle}</span><button type="button" className="btn btn-secondary text-xs" onClick={() => { setDirectories([]); setFiles([]); }}>{t.clear}</button></div>}
         {files.length > 0 && <ul className="max-h-64 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800" aria-label={t.chooseFiles}>
           {files.map((file) => { const key = fileKey(file), task = tasks[key]; return <li key={key} className="py-3 flex items-center gap-3 text-sm">
             <AppIcon name="file" size={20} className="text-brand-600 shrink-0" />
-            <div className="min-w-0 flex-1"><p className="truncate" dir="auto">{file.webkitRelativePath || file.name}</p>
+            <div className="min-w-0 flex-1"><p className="truncate" dir="auto">{relativeUploadPath(file)}</p>
               <p className="text-xs text-slate-500" dir="ltr">{formatBytes(file.size)}{task ? ` · ${task.progress}%` : ''}</p>
               {busy && task && <progress aria-label={file.name} value={task.progress} max={100} className="w-full accent-brand-600" />}
               {task?.error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-300">{task.error}</p>}
@@ -206,8 +214,9 @@ export default function UploadView({ user, folders, departments, categories, def
             <button type="button" className="btn btn-secondary p-2" aria-label={`${t.removeFile}: ${file.name}`} onClick={() => setFiles((prev) => prev.filter((item) => item !== file))}><AppIcon name="x" size={15} /></button>
           </li>; })}
         </ul>}
+        {directoriesDone && done === 0 && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t.savedSuccess}</p>}
         {done > 0 && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t.uploadSuccess}: {done}</p>}
-        <button type="submit" disabled={busy || !files.length} className="btn btn-primary w-full sm:w-auto"><AppIcon name="upload" size={17} />{busy ? t.uploadingProgress : t.uploadSubmit}{files.length ? ` (${files.length})` : ''}</button>
+        <button type="submit" disabled={busy || (!files.length && !directories.length)} className="btn btn-primary w-full sm:w-auto"><AppIcon name="upload" size={17} />{busy ? t.uploadingProgress : t.uploadSubmit}{files.length ? ` (${files.length})` : ''}</button>
       </fieldset>
     </form>
   </div>;

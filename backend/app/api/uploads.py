@@ -35,6 +35,7 @@ UPLOAD_ROOT = Path(os.getenv('UPLOAD_TEMP_ROOT', str(LOCAL_ROOT / '.uploads')))
 class UploadInit(BaseModel):
     file_name: str = Field(min_length=1, max_length=250)
     file_size: int = Field(gt=0, le=9223372036854775807)
+    owner_id: uuid.UUID | None = None
     folder_id: uuid.UUID | None = None
     department: str | None = Field(default=None, max_length=160)
     classification: str | None = Field(default=None, max_length=120)
@@ -78,6 +79,13 @@ async def initiate(payload: UploadInit, user: Annotated[User, Depends(current_us
         folder = await db.get(Folder, payload.folder_id)
         if not folder or folder.deleted_at is not None: raise HTTPException(404, 'Folder not found')
         if not await _can_write_folder(folder, user, db): raise HTTPException(403, 'Write access to this folder is required')
+    from app.api.access import can_manage_owner
+    target_owner = folder.owner_id if payload.folder_id else payload.owner_id or user.id
+    if payload.owner_id and payload.owner_id != target_owner:
+        raise HTTPException(422, "Folder must belong to the selected workspace")
+    if not await can_manage_owner(user, target_owner, db): raise HTTPException(403, "Full access required")
+    owner = await db.get(User, target_owner)
+    if not owner or not owner.is_active: raise HTTPException(403, 'Workspace unavailable')
     await cleanup_uploads(db)
     upload = UploadSession(id=uuid.uuid4(), user_id=user.id, file_name=name, file_size=payload.file_size,
         received=0, stored_bytes=len(MAGIC) + 16, chunks=0,

@@ -15,6 +15,7 @@ router = APIRouter()
 @router.get("/stats")
 async def stats(user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
     vis = await build_document_visibility_clause(user, db)
+    vis = vis & (Document.user_id == user.id)
     count = await db.scalar(select(func.count(Document.id)).where(vis)) or 0
     size = await db.scalar(select(func.coalesce(func.sum(Document.file_size), 0)).where(vis)) or 0
     processed = await db.scalar(select(func.count(Document.id)).where(vis, Document.processing_status == "completed")) or 0

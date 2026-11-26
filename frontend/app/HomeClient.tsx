@@ -2,7 +2,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BrandMark, { AppIcon } from './BrandMark';
 import DocumentModal from './DocumentModal';
-import { isAllowedUploadFile, uploadInChunks, droppedFiles } from './lib/uploads';
+import { isAllowedUploadFile, uploadInChunks, droppedFiles, importDirectoryPaths, createImportDirectories } from './lib/uploads';
 import ArchiveView, { DRAG_DOC_IDS_MIME } from './components/ArchiveView';
 import EditDocumentModal from './components/EditDocumentModal';
 import FirstLoginPasswordModal from './components/FirstLoginPasswordModal';
@@ -18,13 +18,13 @@ import {
 } from './components/SystemStatus';
 import ToastContainer from './components/ToastContainer';
 import TrashView from './components/TrashView';
+import TeamView from './components/TeamView';
 import UploadView from './components/UploadView';
 import {
   ArchiveFilters,
   ArchiveScope,
   BulkUploadTask,
   DocItem,
-  EmployeeLinkGroup,
   FolderItem,
   LocaleCode,
   OwnerSummary,
@@ -51,7 +51,7 @@ const PREF_LANG_KEY = 'archive-pref-lang';
 const PREF_LANG_CHOSEN_KEY = 'archive-pref-lang-chosen';
 const PREF_THEME_KEY = 'archive-pref-theme';
 
-type SectionKey = 'archive' | 'upload' | 'trash' | 'settings';
+type SectionKey = 'archive' | 'team' | 'upload' | 'trash' | 'settings';
 
 type PreviewDocState = {
   id: string;
@@ -162,7 +162,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   // Admin State
   const [users, setUsers] = useState<User[]>([]);
-  const [linkGroups, setLinkGroups] = useState<EmployeeLinkGroup[]>([]);
   const [systemSummary, setSystemSummary] = useState<SystemSummary | null>(null);
   const [storageMetrics, setStorageMetrics] = useState<StorageMetrics | null>(null);
   const [stepUpToken, setStepUpToken] = useState<string>('');
@@ -274,7 +273,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     setSidebarDragOverId(null);
     setTrash(EMPTY_TRASH);
     setUsers([]);
-    setLinkGroups([]);
     setSystemSummary(null);
     setStorageMetrics(null);
     setStepUpToken('');
@@ -461,7 +459,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         if (activeFilters.mime_type) params.set('mime_type', activeFilters.mime_type);
         if (activeFilters.classification) params.set('classification', activeFilters.classification);
         if (activeFilters.keyword.trim()) params.set('keyword', activeFilters.keyword.trim());
-        if (activeFilters.owner_id) params.set('owner_id', activeFilters.owner_id);
+        // Personal archive is intentionally owner-scoped by the server; team uses a separate view.
         if (activeFilters.from_date) params.set('from_date', activeFilters.from_date);
         if (activeFilters.to_date) params.set('to_date', activeFilters.to_date);
 
@@ -484,19 +482,14 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     async (overrideToken?: string, overrideStepUp?: string) => {
       try {
         const activeStepUp = overrideStepUp ?? stepUpToken;
-        const [usersRes, groupsRes, summaryRes] = await Promise.all([
+        const [usersRes, summaryRes] = await Promise.all([
           apiFetch('/users', {}, overrideToken),
-          apiFetch('/users/link-groups', {}, overrideToken),
           apiFetch('/admin/system-summary', {}, overrideToken),
         ]);
 
         if (usersRes.ok) {
           const data = await usersRes.json();
           setUsers(Array.isArray(data) ? data : []);
-        }
-        if (groupsRes.ok) {
-          const data = await groupsRes.json();
-          setLinkGroups(Array.isArray(data) ? data : []);
         }
         if (summaryRes.ok) {
           const data: SystemSummary = await summaryRes.json();
@@ -1030,7 +1023,11 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
   // Sequential bulk upload: bounded network/memory use without truncating the file list.
   async function handleBulkUploadFiles(files: File[], targetFolderId: string | null) {
-    if (!files.length) return;
+    const paths = importDirectoryPaths(files);
+    if (!files.length && !paths.length) return;
+    try { await createImportDirectories(paths, token, targetFolderId); }
+    catch (error: any) { pushToast('err', localizeApiError(error.message, error.status || 0, locale, t)); return; }
+    if (!files.length) { await loadFolders(); pushToast('ok', t.savedSuccess); return; }
     if (uploadTrayTimerRef.current) {
       window.clearTimeout(uploadTrayTimerRef.current);
       uploadTrayTimerRef.current = null;
@@ -1247,45 +1244,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     pushToast('ok', t.savedSuccess);
   }
 
-  async function handleCreateLinkGroup(name: string, memberIds: string[]) {
-    const res = await apiFetch('/users/link-groups', {
-      method: 'POST',
-      body: JSON.stringify({ name, member_ids: memberIds }),
-    });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      throw new Error(msg);
-    }
-    await Promise.all([loadAdminData(), loadVisibleOwners(), loadFolders(), loadDocuments()]);
-    pushToast('ok', t.savedSuccess);
-  }
-
-  async function handleUpdateLinkGroup(groupId: string, name: string, memberIds: string[]) {
-    const res = await apiFetch(`/users/link-groups/${groupId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ name, member_ids: memberIds }),
-    });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      throw new Error(msg);
-    }
-    await Promise.all([loadAdminData(), loadVisibleOwners(), loadFolders(), loadDocuments()]);
-    pushToast('ok', t.savedSuccess);
-  }
-
-  async function handleDeleteLinkGroup(groupId: string) {
-    const res = await apiFetch(`/users/link-groups/${groupId}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok) {
-      const msg = await parseErrorDetail(res, t.errorGeneric);
-      throw new Error(msg);
-    }
-    await Promise.all([loadAdminData(), loadVisibleOwners(), loadFolders(), loadDocuments()]);
-    pushToast('ok', t.savedSuccess);
-  }
-
-  // Handlers: Admin Gemini / Storage / Reindex
   async function handleUnlockStorage(masterPassword: string) {
     const res = await apiFetch('/auth/admin/master-challenge', {
       method: 'POST',
@@ -1587,6 +1545,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         : archiveScope === 'starred'
         ? t.navStarred
         : t.navArchive
+      : section === 'team'
+      ? (locale === 'ar' ? 'ملفات الفريق' : 'Team files')
       : section === 'upload'
       ? t.navUpload
       : section === 'trash'
@@ -1600,6 +1560,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     badge?: number;
   }[] = [
     { key: 'archive', label: t.navArchive, icon: 'archive' },
+    { key: 'team', label: locale === 'ar' ? 'ملفات الفريق' : 'Team files', icon: 'users' },
     { key: 'trash', label: t.navTrash, icon: 'trash', badge: trash.total_count },
     { key: 'settings', label: t.navSettings, icon: 'settings' },
   ];
@@ -1641,7 +1602,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     }
 
     const filesToUpload = await droppedFiles(e.dataTransfer);
-    if (filesToUpload.length > 0) {
+    if (filesToUpload.length > 0 || importDirectoryPaths(filesToUpload).length > 0) {
       setSection('archive');
       void handleBulkUploadFiles(filesToUpload, targetFolderId);
     }
@@ -1688,6 +1649,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
                 <button
                   type="button"
                   onClick={() => handleNavigate(item.key)}
+                  aria-current={active ? 'page' : undefined}
                   className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     active
                       ? 'bg-[#0E7490]/30 text-white font-semibold ring-1 ring-[#0891B2]/40'
@@ -2005,7 +1967,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               <AppIcon name="menu" size={18} />
             </button>
             <span className="hidden sm:grid w-9 h-9 rounded-xl bg-brand-50 dark:bg-[#132942] text-brand-600 dark:text-brand-400 place-items-center">
-              <AppIcon name={section === 'archive' ? 'archive' : section === 'upload' ? 'upload' : section === 'trash' ? 'trash' : 'settings'} size={17} />
+              <AppIcon name={section === 'archive' ? 'archive' : section === 'team' ? 'users' : section === 'upload' ? 'upload' : section === 'trash' ? 'trash' : 'settings'} size={17} />
             </span>
             <div className="min-w-0">
               <p dir="ltr" className="hidden sm:block text-[10px] font-semibold tracking-[.15em] text-slate-500 dark:text-slate-400 mb-1 w-fit">Archive YemanY</p>
@@ -2035,7 +1997,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               archiveScope={archiveScope}
               folders={folders}
               docs={docs}
-              visibleOwners={visibleOwners}
+              visibleOwners={visibleOwners.filter((owner) => owner.id === user.id)}
               categories={categories}
               departments={departments}
               selectedFolder={selectedFolder}
@@ -2074,6 +2036,8 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             />
           )}
 
+          {section === 'team' && <TeamView token={token} user={user} locale={locale} t={t} onPersonalChanged={async () => { await Promise.all([loadFolders(), loadDocuments()]); }} />}
+
           {section === 'upload' && (
             <UploadView
               user={user}
@@ -2082,6 +2046,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               categories={standardizedCategories}
               defaultFolderId={selectedFolder}
               t={t}
+              onCreateDirectories={async (paths, folderId) => { try { await createImportDirectories(paths, token, folderId); } catch (e: any) { throw new Error(localizeApiError(e.message, e.status || 0, locale, t)); } }}
               onUpload={handleUploadDocument}
               onFinished={async () => { await Promise.all([loadFolders(), loadDocuments()]); pushToast('ok', t.uploadSuccess); }}
               onGoArchive={(folderId) => {
@@ -2115,7 +2080,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               user={user}
               token={token}
               users={users}
-              linkGroups={linkGroups}
               folders={folders}
               taxonomy={taxonomy}
               departments={departments}
@@ -2132,9 +2096,6 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               onChangePassword={handleChangePassword}
               onCreateUser={handleCreateUser}
               onUpdateUser={handleUpdateUser}
-              onCreateLinkGroup={handleCreateLinkGroup}
-              onUpdateLinkGroup={handleUpdateLinkGroup}
-              onDeleteLinkGroup={handleDeleteLinkGroup}
               onCreateTaxonomyItem={handleCreateTaxonomyItem}
               onDeleteTaxonomyItem={handleDeleteTaxonomyItem}
               onUnlockStorage={handleUnlockStorage}

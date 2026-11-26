@@ -1,4 +1,5 @@
 'use client';
+import RelationshipsPanel from './RelationshipsPanel';
 import GeminiKeyPanel from './GeminiKeyPanel';
 import AuditPanel from './AuditPanel';
 import React, { FormEvent, useMemo, useState } from 'react';
@@ -6,7 +7,6 @@ import { AppIcon } from '../BrandMark';
 import { LANGUAGES, roleDisplayLabel, type TranslationKeys } from '../lib/i18n';
 import PasswordInput, { validateFlexiblePassword } from './PasswordInput';
 import {
-  EmployeeLinkGroup,
   FolderItem,
   LocaleCode,
   StorageMetrics,
@@ -25,7 +25,6 @@ export default function SettingsView({
   user,
   token,
   users,
-  linkGroups,
   folders,
   taxonomy,
   departments,
@@ -42,9 +41,6 @@ export default function SettingsView({
   onChangePassword,
   onCreateUser,
   onUpdateUser,
-  onCreateLinkGroup,
-  onUpdateLinkGroup,
-  onDeleteLinkGroup,
   onUnlockStorage,
   onProviderChange,
   onSaveProvider,
@@ -60,7 +56,6 @@ export default function SettingsView({
   user: User;
   token: string;
   users: User[];
-  linkGroups: EmployeeLinkGroup[];
   folders: FolderItem[];
   taxonomy: TaxonomyData;
   departments: string[];
@@ -99,9 +94,6 @@ export default function SettingsView({
       gemini_api_key?: string;
     }
   ) => Promise<void>;
-  onCreateLinkGroup: (name: string, memberIds: string[]) => Promise<void>;
-  onUpdateLinkGroup: (groupId: string, name: string, memberIds: string[]) => Promise<void>;
-  onDeleteLinkGroup: (groupId: string) => Promise<void>;
   onUnlockStorage: (masterPassword: string) => Promise<void>;
   onProviderChange: (val: string) => void;
   onSaveProvider: () => Promise<void>;
@@ -154,13 +146,6 @@ export default function SettingsView({
   const [clearPersonalKey, setClearPersonalKey] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
 
-  // Admin Employee Data Linking Form
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const [groupName, setGroupName] = useState('');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-  const [memberSearch, setMemberSearch] = useState('');
-  const [linkBusy, setLinkBusy] = useState(false);
-
   // Storage / Taxonomy / Reindex
   const [masterPass, setMasterPass] = useState('');
   const [storageBusy, setStorageBusy] = useState(false);
@@ -184,19 +169,6 @@ export default function SettingsView({
         (u.department || '').toLowerCase().includes(q)
     );
   }, [users, userTableSearch]);
-
-  const filteredLinkableUsers = useMemo(() => {
-    const q = memberSearch.trim().toLowerCase();
-    return users.filter((u) => {
-      if (!q) return true;
-      return (
-        u.username.toLowerCase().includes(q) ||
-        (u.full_name || '').toLowerCase().includes(q) ||
-        (u.job_title || '').toLowerCase().includes(q) ||
-        (u.department || '').toLowerCase().includes(q)
-      );
-    });
-  }, [users, memberSearch]);
 
   async function handleAccountPassword(e: FormEvent) {
     e.preventDefault();
@@ -301,40 +273,6 @@ export default function SettingsView({
       setUNotice({ type: 'err', text: e?.message || t.errorGeneric });
     } finally {
       setEditBusy(false);
-    }
-  }
-
-  function toggleMember(uid: string) {
-    setSelectedMemberIds((prev) =>
-      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
-    );
-  }
-
-  function startEditGroup(group: EmployeeLinkGroup) {
-    setEditingGroupId(group.id);
-    setGroupName(group.name);
-    setSelectedMemberIds(group.members.map((m) => m.id));
-  }
-
-  function resetGroupForm() {
-    setEditingGroupId(null);
-    setGroupName('');
-    setSelectedMemberIds([]);
-  }
-
-  async function handleSaveLinkGroup(e: FormEvent) {
-    e.preventDefault();
-    if (!groupName.trim() || selectedMemberIds.length < 2) return;
-    setLinkBusy(true);
-    try {
-      if (editingGroupId) {
-        await onUpdateLinkGroup(editingGroupId, groupName.trim(), selectedMemberIds);
-      } else {
-        await onCreateLinkGroup(groupName.trim(), selectedMemberIds);
-      }
-      resetGroupForm();
-    } finally {
-      setLinkBusy(false);
     }
   }
 
@@ -896,174 +834,7 @@ export default function SettingsView({
           )}
 
           {/* 2. EMPLOYEE DATA LINKING */}
-          {adminSub === 'linking' && (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-              <form onSubmit={handleSaveLinkGroup} className="card p-5 xl:col-span-5 space-y-4 h-fit">
-                <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
-                    {editingGroupId ? t.editGroupTitle : t.createGroupTitle}
-                  </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                    {t.linkingDesc}
-                  </p>
-                </div>
-
-                <label className="block text-xs font-semibold text-[#0F2137] dark:text-slate-300">
-                  {t.groupNameLabel}
-                  <input
-                    className="field mt-1"
-                    placeholder={t.groupNamePlaceholder}
-                    value={groupName}
-                    onChange={(e) => setGroupName(e.target.value)}
-                    maxLength={180}
-                    required
-                  />
-                </label>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[#0F2137] dark:text-slate-300">
-                      {t.selectEmployeesLabel}
-                    </span>
-                    <span className="text-[#0E7490] dark:text-[#22D3EE] font-semibold tabular-nums">
-                      {selectedMemberIds.length} {t.selectedCount}
-                    </span>
-                  </div>
-
-                  <input
-                    type="search"
-                    className="field text-xs"
-                    placeholder={t.searchEmployeesPlaceholder}
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                  />
-
-                  <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredLinkableUsers.map((u) => {
-                      const checked = selectedMemberIds.includes(u.id);
-                      return (
-                        <label
-                          key={u.id}
-                          className={`flex items-center justify-between gap-3 px-3 py-2.5 cursor-pointer transition-colors ${
-                            checked
-                              ? 'bg-brand-50/80 dark:bg-[#132942]'
-                              : 'hover:bg-slate-50 dark:hover:bg-[#132942]/45'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleMember(u.id)}
-                              className="w-4 h-4 accent-[#0E7490] rounded shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <span className="block text-xs font-semibold text-[#0F2137] dark:text-white truncate">
-                                {u.full_name || u.username}
-                              </span>
-                              <span className="block text-[11px] text-slate-600 dark:text-slate-300 truncate">
-                                {u.job_title || roleDisplayLabel(u.role, t)}
-                                {u.department ? ` · ${u.department}` : ''}
-                              </span>
-                            </div>
-                          </div>
-                          <span dir="ltr" className="text-[11px] text-slate-400 shrink-0">
-                            @{u.username}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300">{t.selectMinTwoHint}</p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={linkBusy || !groupName.trim() || selectedMemberIds.length < 2}
-                    className="btn btn-primary flex-1 text-xs"
-                  >
-                    {linkBusy ? t.saving : editingGroupId ? t.updateLinkButton : t.createLinkButton}
-                  </button>
-                  {editingGroupId && (
-                    <button type="button" onClick={resetGroupForm} className="btn btn-muted text-xs">
-                      {t.cancel}
-                    </button>
-                  )}
-                </div>
-              </form>
-
-              <section className="card p-5 xl:col-span-7 space-y-4">
-                <div className="pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-[#0F2137] dark:text-white">
-                    {t.existingGroupsTitle} · <span dir="ltr" className="tabular-nums">{linkGroups.length}</span>
-                  </h3>
-                </div>
-
-                {linkGroups.length === 0 ? (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 py-8 text-center">
-                    {t.noLinkGroups}
-                  </p>
-                ) : (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {linkGroups.map((group) => (
-                      <div key={group.id} className="py-4 first:pt-0 last:pb-0 space-y-2.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h4 className="text-sm font-bold text-[#0F2137] dark:text-white">
-                              {group.name}
-                            </h4>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                              <span dir="ltr" className="tabular-nums">{group.members.length}</span> {t.adminUsers}
-                              {group.created_at ? (
-                                <>
-                                  {' · '}
-                                  <span dir="ltr" className="tabular-nums">{formatDateISO(group.created_at)}</span>
-                                </>
-                              ) : null}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => startEditGroup(group)}
-                              className="btn btn-muted text-xs py-1 px-2.5"
-                            >
-                              {t.edit}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteLinkGroup(group.id)}
-                              className="btn btn-muted text-xs py-1 px-2.5 text-rose-600 dark:text-rose-400 hover:border-rose-300"
-                            >
-                              {t.unlinkButton}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
-                          {group.members.map((m) => (
-                            <span
-                              key={m.id}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-[#132942] border border-slate-200/80 dark:border-slate-700"
-                            >
-                              <span className="w-5 h-5 rounded-md bg-brand-50 dark:bg-[#0F2137] text-[#0E7490] dark:text-[#22D3EE] text-[10px] font-bold grid place-items-center">
-                                {m.display_name.slice(0, 1).toUpperCase()}
-                              </span>
-                              <span className="font-medium">{m.display_name}</span>
-                              {m.job_title && (
-                                <span className="text-[11px] text-slate-400">({m.job_title})</span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          )}
+          {adminSub === 'linking' && <RelationshipsPanel token={token} users={users} locale={locale} />}
 
           {/* 3. ADMIN-ONLY GEMINI API KEY MANAGEMENT */}
           {adminSub === 'gemini' && <GeminiKeyPanel token={token} locale={locale} />}

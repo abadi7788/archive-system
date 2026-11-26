@@ -3,28 +3,40 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
-from app.models.employee_link import EmployeeLinkMember
 from app.models.folder import Folder, FolderGrant
 from app.models.user import User, UserRole
 
 
+async def linked_permissions(user: User, db: AsyncSession) -> dict[uuid.UUID, str]:
+    from app.models.employee_relationship import EmployeeRelationship as R
+    # AsyncSession is request-scoped: reuse direct-pair permissions within this request only.
+    cache = db.info.setdefault('employee_relationship_permissions', {})
+    if user.id in cache: return cache[user.id]
+    rows = (await db.scalars(select(R).where(or_(R.user_a_id == user.id,
+        and_(R.user_b_id == user.id, R.mode == 'mutual'))))).all()
+    cache[user.id] = {r.user_b_id if r.user_a_id == user.id else r.user_a_id: r.access for r in rows}
+    return cache[user.id]
+
+
+async def can_manage_owner(user: User, owner_id: uuid.UUID, db: AsyncSession) -> bool:
+    if user.role == UserRole.VIEWER: return False
+    if user.id == owner_id or user.role == UserRole.ADMIN: return True
+    return (await linked_permissions(user, db)).get(owner_id) == 'full'
+
+
 async def get_visible_owner_ids(user: User, db: AsyncSession) -> set[uuid.UUID] | None:
-    """
-    Returns None for Admin (unrestricted visibility across all employees).
-    For non-admin users, returns {user.id} union all employee IDs that share
-    at least one EmployeeLinkGroup with the user.
-    """
-    if user.role == UserRole.ADMIN:
-        return None
-    group_ids_q = select(EmployeeLinkMember.group_id).where(EmployeeLinkMember.user_id == user.id)
-    peer_ids = (
-        await db.scalars(
-            select(EmployeeLinkMember.user_id).where(EmployeeLinkMember.group_id.in_(group_ids_q)).distinct()
-        )
-    ).all()
-    visible = {user.id}
-    visible.update(peer_ids)
-    return visible
+    if user.role == UserRole.ADMIN: return None
+    return {user.id, *(await linked_permissions(user, db)).keys()}
+
+
+async def workspace_owner(user: User, db: AsyncSession, owner_id=None):
+    """Lists/searches are personal by default; another owner must be selected explicitly."""
+    owner_id = owner_id or user.id
+    visible = await get_visible_owner_ids(user, db)
+    if visible is not None and owner_id not in visible:
+        from fastapi import HTTPException
+        raise HTTPException(403, 'Access to this workspace is not allowed')
+    return owner_id
 
 
 async def build_document_visibility_clause(user: User, db: AsyncSession, include_deleted: bool = False):
