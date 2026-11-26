@@ -34,6 +34,9 @@ async def lifespan(_: FastAPI):
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_theme VARCHAR(16) NOT NULL DEFAULT 'light'"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_item_size INTEGER NOT NULL DEFAULT 160"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+        from app.models.employee_relationship import LEGACY_MIGRATION
+        for statement in LEGACY_MIGRATION.split(';'):
+            if statement.strip(): await conn.execute(text(statement))
     # Ensure local document storage directory is initialized on startup.
     from app.services.storage_service import get_storage
     await get_storage().ping()

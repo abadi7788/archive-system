@@ -24,6 +24,7 @@ export default function DocumentModal({
   token,
   language,
   canPrint = false,
+  canShare = true,
   onDownload,
   onDelete,
   onClose,
@@ -32,6 +33,7 @@ export default function DocumentModal({
   token: string;
   language: LocaleCode;
   canPrint?: boolean;
+  canShare?: boolean;
   onDownload?: () => void;
   onDelete?: () => Promise<void>;
   onClose: () => void;
@@ -196,7 +198,7 @@ export default function DocumentModal({
     { key: 'text' as const, label: t.extractedText, icon: 'file' },
     { key: 'chat' as const, label: t.askDocument, icon: 'sparkles' },
     { key: 'share' as const, label: t.secureShare, icon: 'share' },
-  ];
+  ].filter(item => item.key !== 'share' || canShare);
 
   const wordCount = (doc.extracted_text || '').trim()
     ? (doc.extracted_text || '').trim().split(/\s+/).length

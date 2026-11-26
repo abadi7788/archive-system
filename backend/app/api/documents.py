@@ -19,6 +19,8 @@ from app.api.access import (
     build_document_visibility_clause,
     build_user_display_map,
     get_visible_owner_ids,
+    workspace_owner,
+    can_manage_owner,
 )
 from app.api.deps import current_user
 from app.db import SessionLocal, get_db
@@ -66,7 +68,7 @@ def _build_content_disposition(file_name: str, mime_type: str, inline: bool = Tr
 async def _can_write_doc(doc: Document, user: User, db: AsyncSession) -> bool:
     if user.role == UserRole.VIEWER:
         return False
-    if user.role == UserRole.ADMIN or doc.user_id == user.id:
+    if await can_manage_owner(user, doc.user_id, db):
         return True
     if doc.folder_id:
         return bool(
@@ -84,7 +86,7 @@ async def _can_write_doc(doc: Document, user: User, db: AsyncSession) -> bool:
 async def _can_write_folder(folder: Folder, user: User, db: AsyncSession) -> bool:
     if user.role == UserRole.VIEWER:
         return False
-    if folder.owner_id == user.id or user.role == UserRole.ADMIN:
+    if await can_manage_owner(user, folder.owner_id, db):
         return True
     return bool(
         await db.scalar(
@@ -230,7 +232,7 @@ async def upload_document(
 
 async def store_uploaded_document(background_tasks, source, filename, file_size, user, db, request,
                                   folder_id=None, department=None, classification=None, keywords=None, summary=None,
-                                  document_id=None, completion=None):
+                                  document_id=None, completion=None, owner_id=None):
     if user.role == UserRole.VIEWER:
         raise HTTPException(403, "Viewer accounts cannot upload or modify documents")
     if file_size <= 0:
@@ -251,15 +253,23 @@ async def store_uploaded_document(background_tasks, source, filename, file_size,
         if not await _can_write_folder(folder, user, db):
             raise HTTPException(403, "Write access to this folder is required")
 
+    target_owner = folder.owner_id if folder else uuid.UUID(str(owner_id)) if owner_id else user.id
+    if owner_id and target_owner != uuid.UUID(str(owner_id)):
+        raise HTTPException(422, "Folder must belong to the selected workspace")
+    if not await can_manage_owner(user, target_owner, db):
+        raise HTTPException(403, "Full access to this workspace is required")
+    owner = await db.get(User, target_owner)
+    if not owner or not owner.is_active: raise HTTPException(403, "Workspace unavailable")
+
     parsed_keywords = [k.strip() for k in (keywords or "").split(",") if k.strip()][:50]
     did = document_id or uuid.uuid4()
-    await available_name(db, "document", name, folder.id if folder else None, user.id)
-    key = f"{user.id}/{did}"
+    await available_name(db, "document", name, folder.id if folder else None, target_owner)
+    key = f"{target_owner}/{did}"
     doc = Document(
         id=did,
-        user_id=user.id,
+        user_id=target_owner,
         folder_id=folder.id if folder else None,
-        department=(department.strip() if department and department.strip() else user.department),
+        department=(department.strip() if department and department.strip() else owner.department),
         classification=(classification.strip() if classification and classification.strip() else None),
         summary=(summary.strip() if summary and summary.strip() else None),
         keywords=parsed_keywords,
@@ -304,11 +314,11 @@ async def store_uploaded_document(background_tasks, source, filename, file_size,
     await db.commit()
 
     if doc.processing_status == "queued":
-        background_tasks.add_task(run_ocr_background, did, key, detected_mime, user.gemini_key_encrypted)
+        background_tasks.add_task(run_ocr_background, did, key, detected_mime, owner.gemini_key_encrypted)
 
     breadcrumbs = await build_folder_breadcrumbs(db)
     folder_breadcrumb, folder_path = format_document_path(doc.folder_id, name, breadcrumbs)
-    owner_name = (user.full_name or "").strip() or user.username
+    owner_name = (owner.full_name or "").strip() or owner.username
     return {
         "id": str(did),
         "file_name": name,
@@ -323,10 +333,10 @@ async def store_uploaded_document(background_tasks, source, filename, file_size,
         "folder_id": str(doc.folder_id) if doc.folder_id else None,
         "folder_breadcrumb": folder_breadcrumb,
         "folder_path": folder_path,
-        "owner_id": str(user.id),
+        "owner_id": str(target_owner),
         "owner_name": owner_name,
-        "owner_username": user.username,
-        "owner_job_title": user.job_title,
+        "owner_username": owner.username,
+        "owner_job_title": owner.job_title,
         "can_manage": True,
         "is_starred": False,
         "created_at": doc.created_at,
@@ -365,6 +375,8 @@ async def bulk_move_documents(
         if not await _can_write_doc(doc, user, db):
             skipped += 1
             continue
+        if target_folder and target_folder.owner_id != doc.user_id:
+            raise HTTPException(422, "Cannot move between workspaces; copy the document instead")
         await available_name(db, "document", doc.file_name, target_folder.id if target_folder else None, doc.user_id, doc.id)
         doc.folder_id = target_folder.id if target_folder else None
         moved += 1
@@ -518,6 +530,7 @@ async def list_documents(
 ):
     if not 1 <= limit <= 250:
         raise HTTPException(422, "Limit must be 1-250")
+    owner_id = await workspace_owner(user, db, owner_id)
     vis_clause = await build_document_visibility_clause(user, db)
     q = select(Document).where(vis_clause)
 
@@ -565,7 +578,7 @@ async def list_documents(
     for d in rows:
         folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
         owner_info = owner_map.get(d.user_id)
-        can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
+        can_manage = await _can_write_doc(d, user, db)
         results.append(
             {
                 "id": str(d.id),
@@ -719,6 +732,8 @@ async def edit_document(
                     raise HTTPException(404, "Folder not found")
                 if not await _can_write_folder(folder, user, db):
                     raise HTTPException(403, "Write access to target folder required")
+                if folder.owner_id != doc.user_id:
+                    raise HTTPException(422, "Cannot move between workspaces; copy the document instead")
                 doc.folder_id = fid
                 folder.updated_at = datetime.now(timezone.utc)
         elif key == "file_name":
@@ -855,3 +870,35 @@ class RenamePayload(BaseModel):
 async def rename_document(document_id: uuid.UUID, payload: RenamePayload,
     user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)], request: Request):
     return await edit_document(document_id, {"file_name": payload.name}, user, db, request)
+
+
+class CopyDocumentPayload(BaseModel):
+    name: str | None = Field(default=None, max_length=250)
+    folder_id: uuid.UUID | None = None
+
+
+@router.post('/{document_id}/copy', status_code=201)
+async def copy_document(document_id: uuid.UUID, payload: CopyDocumentPayload, background_tasks: BackgroundTasks,
+                        request: Request, user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    """Copy the original into the caller's own archive, never extend the source relationship."""
+    import tempfile
+    visibility = await build_document_visibility_clause(user, db)
+    doc = await db.scalar(select(Document).where(Document.id == document_id, visibility))
+    if not doc: raise HTTPException(404, 'Document not found')
+    if user.role == UserRole.VIEWER: raise HTTPException(403, 'Viewer cannot add documents')
+    if payload.folder_id:
+        folder = await db.get(Folder, payload.folder_id)
+        if not folder or folder.deleted_at is not None or folder.owner_id != user.id:
+            raise HTTPException(403, 'Copy destination must be your own archive')
+    with tempfile.TemporaryFile() as source:
+        def stage():
+            for chunk in get_storage().iter_content(doc.file_path): source.write(chunk)
+            source.seek(0)
+        await asyncio.to_thread(stage)
+        response = await store_uploaded_document(background_tasks, source, renamed_file(doc.file_name, payload.name) if payload.name else doc.file_name,
+            doc.file_size, user, db, request, folder_id=str(payload.folder_id) if payload.folder_id else None,
+            department=doc.department, classification=doc.classification, keywords=','.join(doc.keywords or []), summary=doc.summary)
+    db.add(AuditLog(actor_id=user.id, action='document.copied', resource_type='document', resource_id=response['id'],
+                   detail={'source_document_id': str(doc.id), 'source_owner_id': str(doc.user_id)}))
+    await db.commit()
+    return response

@@ -13,6 +13,8 @@ from app.api.access import (
     build_folder_visibility_clause,
     build_user_display_map,
     get_visible_owner_ids,
+    workspace_owner,
+    can_manage_owner,
 )
 from app.api.deps import admin_user, current_user
 from app.db import get_db
@@ -29,6 +31,7 @@ router = APIRouter()
 class FolderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=180)
     parent_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
 
 
 class FolderUpdate(BaseModel):
@@ -65,6 +68,7 @@ async def list_folders(
     db: Annotated[AsyncSession, Depends(get_db)],
     owner_id: uuid.UUID | None = None,
 ):
+    owner_id = await workspace_owner(user, db, owner_id)
     vis_clause = await build_folder_visibility_clause(user, db)
     q = select(Folder).where(vis_clause)
 
@@ -101,7 +105,7 @@ async def list_folders(
         if last_doc_at and (updated_at is None or last_doc_at > updated_at):
             updated_at = last_doc_at
         owner_info = owner_map.get(f.owner_id)
-        can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and f.owner_id == user.id)
+        can_manage = await can_manage_owner(user, f.owner_id, db)
         results.append(
             {
                 "id": str(f.id),
@@ -135,8 +139,7 @@ async def create_folder(
         if not parent or parent.deleted_at is not None:
             raise HTTPException(404, "Parent folder not found")
         if (
-            parent.owner_id != user.id
-            and user.role != UserRole.ADMIN
+            not await can_manage_owner(user, parent.owner_id, db)
             and not await db.scalar(
                 select(FolderGrant.id).where(
                     FolderGrant.folder_id == parent.id,
@@ -146,14 +149,21 @@ async def create_folder(
             )
         ):
             raise HTTPException(403, "Write access to parent folder required")
+    target_owner = parent.owner_id if parent else payload.owner_id or user.id
+    if payload.owner_id and payload.owner_id != target_owner:
+        raise HTTPException(422, "Folder must belong to the selected workspace")
+    if not await can_manage_owner(user, target_owner, db):
+        raise HTTPException(403, "Full access to this workspace is required")
+    owner = await db.get(User, target_owner)
+    if not owner or not owner.is_active: raise HTTPException(403, "Workspace unavailable")
     name = validate_name(payload.name)
-    await available_name(db, "folder", name, parent.id if parent else None, user.id)
+    await available_name(db, "folder", name, parent.id if parent else None, target_owner)
     path = (parent.path.rstrip("/") + "/" + parent.name) if parent else "/"
     now = datetime.now(timezone.utc)
     folder = Folder(
         name=name,
         parent_id=parent.id if parent else None,
-        owner_id=user.id,
+        owner_id=target_owner,
         path=path or "/",
         updated_at=now,
     )
@@ -165,7 +175,8 @@ async def create_folder(
                     detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None}))
     await db.commit()
     await db.refresh(folder)
-    display_name = (user.full_name or "").strip() or user.username
+    owner = await db.get(User, target_owner)
+    display_name = (owner.full_name or "").strip() or owner.username
     return {
         "id": str(folder.id),
         "name": folder.name,
@@ -173,8 +184,8 @@ async def create_folder(
         "path": folder.path,
         "owner_id": str(folder.owner_id),
         "owner_name": display_name,
-        "owner_username": user.username,
-        "owner_job_title": user.job_title,
+        "owner_username": owner.username,
+        "owner_job_title": owner.job_title,
         "can_manage": True,
         "item_count": 0,
         "subfolder_count": 0,
@@ -192,7 +203,7 @@ async def update_folder(
     folder = await db.scalar(select(Folder).where(Folder.id == folder_id).with_for_update())
     if not folder or folder.deleted_at is not None:
         raise HTTPException(404, "Folder not found")
-    if user.role != UserRole.ADMIN and (user.role == UserRole.VIEWER or folder.owner_id != user.id):
+    if not await can_manage_owner(user, folder.owner_id, db):
         raise HTTPException(403, "Only folder owner or administrator can edit folders")
     old_name = folder.name
     if payload.name is not None:
@@ -210,13 +221,16 @@ async def update_folder(
             new_parent = await db.get(Folder, payload.parent_id)
             if not new_parent or new_parent.deleted_at is not None:
                 raise HTTPException(404, "Target parent folder not found")
-            if user.role != UserRole.ADMIN and new_parent.owner_id != user.id:
+            if new_parent.owner_id != folder.owner_id:
+                raise HTTPException(422, "Cannot move folders between workspaces")
+            if not await can_manage_owner(user, new_parent.owner_id, db):
                 raise HTTPException(403, "Write access to target folder required")
             folder.parent_id = new_parent.id
             folder.path = new_parent.path.rstrip("/") + "/" + new_parent.name
     await available_name(db, "folder", folder.name, folder.parent_id, folder.owner_id, folder.id)
-    if old_name != folder.name:
-        # Refresh stored descendant paths; document breadcrumbs are calculated dynamically.
+    if old_name != folder.name or 'parent_id' in payload.model_fields_set:
+        # Refresh only this subtree, never unrelated workspaces.
+        descendant_ids = set(await _collect_descendant_folder_ids(db, folder.id))
         all_folders = (await db.scalars(select(Folder))).all()
         by_id = {f.id: f for f in all_folders}
         def path_of(item, seen=None):
@@ -225,7 +239,8 @@ async def update_folder(
             seen.add(item.id)
             parent = by_id[item.parent_id]
             return path_of(parent, seen).rstrip("/") + "/" + parent.name
-        for item in all_folders: item.path = path_of(item)
+        for item in all_folders:
+            if item.id in descendant_ids and item.owner_id == folder.owner_id: item.path = path_of(item)
     folder.updated_at = datetime.now(timezone.utc)
     db.add(AuditLog(actor_id=user.id, action="folder.renamed" if old_name != folder.name else "folder.updated", resource_type="folder", resource_id=str(folder.id),
                     detail={"name": folder.name, "parent_id": str(folder.parent_id) if folder.parent_id else None, **({"old_name": old_name, "new_name": folder.name} if old_name != folder.name else {})}))
@@ -251,7 +266,7 @@ async def delete_folder(
     folder = await db.get(Folder, folder_id)
     if not folder or folder.deleted_at is not None:
         raise HTTPException(404, "Folder not found")
-    if user.role != UserRole.ADMIN and (user.role == UserRole.VIEWER or folder.owner_id != user.id):
+    if not await can_manage_owner(user, folder.owner_id, db):
         raise HTTPException(403, "Only folder owner or administrator can delete folders")
 
     now = datetime.now(timezone.utc)
@@ -259,6 +274,8 @@ async def delete_folder(
     nested_folders = (
         await db.scalars(select(Folder).where(Folder.id.in_(descendant_ids), Folder.deleted_at.is_(None)))
     ).all()
+    if any(f.owner_id != folder.owner_id for f in nested_folders):
+        raise HTTPException(409, "Mixed workspace folder requires administrator cleanup")
     for f in nested_folders:
         f.deleted_at = now
         f.deleted_by = user.id
@@ -266,6 +283,8 @@ async def delete_folder(
     nested_docs = (
         await db.scalars(select(Document).where(Document.folder_id.in_(descendant_ids), Document.deleted_at.is_(None)))
     ).all()
+    if any(d.user_id != folder.owner_id for d in nested_docs):
+        raise HTTPException(409, "Mixed workspace folder requires administrator cleanup")
     for d in nested_docs:
         d.deleted_at = now
         d.deleted_by = user.id
@@ -330,3 +349,43 @@ async def departments(user: Annotated[User, Depends(current_user)], db: Annotate
     elif user.department:
         combined.add(user.department.strip())
     return sorted(combined)
+
+
+class ImportPathPayload(BaseModel):
+    parent_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
+    parts: list[str] = Field(min_length=1, max_length=64)
+
+
+@router.post('/import-path')
+async def import_path(payload: ImportPathPayload, user: Annotated[User, Depends(current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    """Idempotently recreate a relative directory path within one selected workspace."""
+    from sqlalchemy import text
+    parts = [validate_name(part) for part in payload.parts]
+    if sum(map(len, parts)) > 4096: raise HTTPException(422, 'Directory path is too long')
+    parent = await db.get(Folder, payload.parent_id) if payload.parent_id else None
+    if payload.parent_id and (not parent or parent.deleted_at is not None): raise HTTPException(404, 'Folder not found')
+    owner_id = parent.owner_id if parent else payload.owner_id or user.id
+    if payload.owner_id and payload.owner_id != owner_id: raise HTTPException(422, 'Folder must belong to the selected workspace')
+    if not await can_manage_owner(user, owner_id, db): raise HTTPException(403, 'Full access required')
+    owner = await db.get(User, owner_id)
+    if not owner or not owner.is_active: raise HTTPException(403, 'Workspace unavailable')
+    created = []
+    for name in parts:
+        parent_id = parent.id if parent else None
+        namespace = str(parent_id) if parent_id else f'root:{owner_id}'
+        await db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))'), {'key': f'names:folder:{namespace}'})
+        query = select(Folder).where(Folder.owner_id == owner_id, Folder.parent_id == parent_id,
+                                      Folder.deleted_at.is_(None), func.lower(Folder.name) == name.lower())
+        child = await db.scalar(query.limit(1))
+        if not child:
+            child = Folder(name=name, owner_id=owner_id, parent_id=parent_id,
+                           path=parent.path.rstrip('/') + '/' + parent.name if parent else '/')
+            db.add(child)
+            await db.flush()
+            created.append(str(child.id))
+            db.add(AuditLog(actor_id=user.id, action='folder.created', resource_type='folder', resource_id=str(child.id),
+                detail={'name': name, 'parent_id': str(parent_id) if parent_id else None, 'owner_id': str(owner_id), 'source': 'directory_import'}))
+        parent = child
+    await db.commit()
+    return {'folder_id': str(parent.id), 'created': created}

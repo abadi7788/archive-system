@@ -159,6 +159,26 @@ export function localizeApiError(
   const raw = (rawDetail || '').trim();
   const lower = raw.toLowerCase();
 
+  const relationshipErrors: Record<string, string> = {
+    'these employees already have a relationship': 'يوجد رابط قائم بين هذين المستخدمين. عدّل الرابط الحالي بدل إنشاء رابط مكرر.',
+    'select two different employees': 'يرجى اختيار مستخدمين مختلفين.',
+    'select two active employees': 'يرجى اختيار مستخدمين بحسابين نشطين.',
+    'revoke the existing relationship before changing employees': 'ألغِ الرابط الحالي ثم أنشئ رابطًا جديدًا لتغيير المستخدمين.',
+    'relationship not found': 'لم يعد هذا الرابط موجودًا. حدّث قائمة الروابط.',
+    'access to this workspace is not allowed': 'لم يعد لديك وصول إلى مساحة العمل هذه.',
+    'workspace unavailable': 'مساحة العمل غير متاحة أو حساب صاحبها غير نشط.',
+    'full access to this workspace is required': 'تتطلب هذه العملية صلاحية التحكم الكامل في مساحة الموظف.',
+    'full access required': 'تتطلب هذه العملية صلاحية التحكم الكامل في مساحة الموظف.',
+    'folder must belong to the selected workspace': 'يجب أن يكون مجلد الوجهة داخل مساحة الموظف المختارة.',
+    'cannot move between workspaces; copy the document instead': 'لا يمكن نقل الملف بين مساحتين مختلفتين. استخدم النسخ إلى الأرشيف الشخصي.',
+    'cannot move folders between workspaces': 'لا يمكن نقل مجلد بين مساحتي موظفين مختلفتين.',
+    'copy destination must be your own archive': 'يجب أن تكون وجهة النسخ داخل أرشيفك الشخصي.',
+    'directory path is too long': 'مسار المجلد أطول من الحد المسموح للاستيراد.',
+    'directory import failed': 'تعذر إنشاء شجرة المجلدات. يرجى إعادة المحاولة.',
+    'mixed workspace folder requires administrator cleanup': 'يحتوي هذا المجلد القديم على عناصر بملكيات مختلفة. راجع إدارة النظام لتنظيمه قبل الحذف.',
+  };
+  if (relationshipErrors[lower]) return locale === 'ar' ? relationshipErrors[lower] : raw;
+
   // 1. Exact & semantic pattern matching (language-agnostic)
   if (lower.includes('method not allowed')) return cat.methodNotAllowed;
 

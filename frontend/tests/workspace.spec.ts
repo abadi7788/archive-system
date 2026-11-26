@@ -475,10 +475,14 @@ test('multi-file Office/TXT upload applies shared metadata and retries interrupt
   await expect(page.getByText(/40 MB|40 ميجابايت/)).toHaveCount(0);
 });
 
-test('directory picker queues every file with the same destination', async ({ page }) => {
+test('directory picker recreates the directory tree below the selected destination', async ({ page }) => {
   await mockApi(page); await loginFixture(page);
   const uploads = await uploadMock(page);
   await page.route('**/api/v1/folders', (route) => route.fulfill({ json: [{ id: 'folder-target', name: 'الوجهة', can_manage: true }] }));
+  const paths: any[] = [];
+  await page.route('**/api/v1/folders/import-path', route => {
+    paths.push(route.request().postDataJSON()); return route.fulfill({ json: { folder_id: 'import-root' } });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
   await page.getByRole('combobox', { name: 'المجلد', exact: true }).selectOption('folder-target');
@@ -487,7 +491,8 @@ test('directory picker queues every file with the same destination', async ({ pa
   await expect(page.getByText('import-folder/second.txt')).toBeVisible();
   await page.locator('button[type="submit"]').click();
   await expect(page.locator('p[role="status"]')).toContainText('2');
-  expect(uploads.sessions.map((item) => item.folder_id)).toEqual(['folder-target', 'folder-target']);
+  expect(uploads.sessions.map((item) => item.folder_id)).toEqual(['import-root', 'import-root']);
+  expect(paths).toEqual([{ parent_id: 'folder-target', owner_id: null, parts: ['import-folder'] }, { parent_id: 'folder-target', owner_id: null, parts: ['import-folder'] }]);
 });
 
 
@@ -519,4 +524,162 @@ test('upload works on HTTP LAN installations without WebCrypto.subtle', async ({
   await page.locator('button[type="submit"]').click();
   await expect(page.locator('p[role="status"]')).toContainText('1');
   expect(uploads.chunks).toEqual([5]);
+});
+
+const teamPeers = [
+  { id: 'peer-b', username: 'badr', display_name: 'بدر أحمد', job_title: 'المحاسبة', access: 'read' },
+  { id: 'peer-c', username: 'jamal', display_name: 'جمال علي', job_title: 'الموارد البشرية', access: 'full' },
+];
+async function mockTeam(page: Page) {
+  await mockApi(page); await loginFixture(page);
+  await page.route('**/api/v1/relationships/team', route => route.fulfill({ json: teamPeers }));
+  await page.route('**/api/v1/folders?**', route => {
+    const owner = new URL(route.request().url()).searchParams.get('owner_id');
+    return route.fulfill({ json: [{ id: `${owner}-folder`, name: 'العقود', parent_id: null, owner_id: owner, can_manage: owner === 'peer-c' }] });
+  });
+  const searches: string[] = [];
+  await page.route('**/api/v1/search?**', route => {
+    const params = new URL(route.request().url()).searchParams, owner = params.get('owner_id');
+    if (!owner) return route.fulfill({ json: documents });
+    searches.push(owner);
+    return route.fulfill({ json: [{ id: `${owner}-doc`, file_name: owner === 'peer-b' ? 'حسابات.txt' : 'موظفون.txt', owner_id: owner, folder_id: params.get('folder_id'), file_size: 5, mime_type: 'text/plain', can_manage: owner === 'peer-c' }] });
+  });
+  return searches;
+}
+
+test('team workspaces stay separate and copying targets the personal archive', async ({ page }) => {
+  const searches = await mockTeam(page);
+  let copied: any;
+  await page.route('**/api/v1/documents/peer-b-doc/copy', route => { copied = route.request().postDataJSON(); return route.fulfill({ status: 201, json: { id: 'copy' } }); });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'ملفات الفريق', exact: true }).click();
+  await expect(page.getByText('المساحات المتاحة')).toBeVisible();
+  await page.getByRole('button', { name: /بدر أحمد/ }).click();
+  await expect(page.getByRole('button', { name: 'حسابات.txt', exact: true })).toBeVisible();
+  await expect(page.getByText('موظفون.txt', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'إضافة إلى هذه المساحة' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'مجلد جديد', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'نسخ لأرشيفي', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'نسخ لأرشيفي' });
+  await dialog.getByLabel('الاسم الجديد').fill('نسخة حسابات.txt');
+  await dialog.getByRole('button', { name: 'إنشاء نسخة' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(copied).toEqual({ name: 'نسخة حسابات.txt', folder_id: null });
+  await page.getByRole('button', { name: 'العقود', exact: true }).click();
+  await expect(page.getByRole('button', { name: /العقود/ })).toBeVisible();
+  await page.getByRole('button', { name: 'كل مساحات الفريق' }).click();
+  await page.getByRole('button', { name: /جمال علي/ }).click();
+  await expect(page.getByRole('button', { name: 'موظفون.txt', exact: true })).toBeVisible();
+  await expect(page.getByText('حسابات.txt', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'إضافة إلى هذه المساحة' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'مجلد جديد', exact: true })).toBeVisible();
+  expect(searches).toContain('peer-b'); expect(searches).toContain('peer-c');
+  await page.getByRole('button', { name: 'الأرشيف', exact: true }).click();
+  await expect(page.getByText('حسابات.txt', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('موظفون.txt', { exact: true })).toHaveCount(0);
+});
+
+test('supervised employee sees an ordinary empty team area with no supervisor identity', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  await page.route('**/api/v1/relationships/team', route => route.fulfill({ json: [] }));
+  await page.goto('/'); await page.getByRole('button', { name: 'ملفات الفريق', exact: true }).click();
+  await expect(page.getByText('لا توجد مساحات فريق متاحة حاليًا.')).toBeVisible();
+  await expect(page.getByText(/المشرف|ربط إشرافي|إشعار بالربط/)).toHaveCount(0);
+});
+
+test('admin creates, edits and revokes an independent supervisory relationship', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  const employees = [{ id: 'person-a', username: 'ahmed', full_name: 'أحمد', role: 'archiver' }, { id: 'person-b', username: 'badr', full_name: 'بدر', role: 'archiver' }];
+  await page.route('**/api/v1/users', route => route.fulfill({ json: employees }));
+  let rows: any[] = []; const changes: any[] = [];
+  await page.route(/\/api\/v1\/relationships(?:\/[^/?]+)?$/, route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: rows });
+    if (route.request().method() === 'DELETE') { rows = []; return route.fulfill({ status: 204 }); }
+    const body = route.request().postDataJSON(); changes.push(body);
+    rows = [{ id: 'rel-1', ...body, user_a: { display_name: 'أحمد' }, user_b: { display_name: 'بدر' } }];
+    return route.fulfill({ status: route.request().method() === 'POST' ? 201 : 200, json: rows[0] });
+  });
+  await page.goto('/'); await page.getByRole('button', { name: 'الإعدادات', exact: true }).click();
+  await page.getByRole('button', { name: 'إدارة النظام', exact: true }).click();
+  await page.getByRole('button', { name: 'ربط بيانات الموظفين', exact: true }).click();
+  await page.getByRole('radio', { name: /ربط إشرافي/ }).check();
+  await page.getByRole('combobox', { name: 'المدير / المشرف', exact: true }).selectOption('person-a');
+  await page.getByRole('combobox', { name: 'الموظف', exact: true }).selectOption('person-b');
+  await page.getByRole('combobox', { name: 'مستوى الوصول', exact: true }).selectOption('full');
+  await page.getByRole('button', { name: 'حفظ التغييرات', exact: true }).click();
+  await expect(page.getByText('تم حفظ العلاقة والصلاحيات.')).toBeVisible();
+  expect(changes[0]).toEqual({ user_a_id: 'person-a', user_b_id: 'person-b', mode: 'supervisory', access: 'full' });
+  const panel = page.getByRole('region', { name: 'الروابط الحالية' });
+  await panel.getByRole('button', { name: 'تعديل', exact: true }).click();
+  await page.getByRole('combobox', { name: 'مستوى الوصول', exact: true }).selectOption('read');
+  await page.getByRole('button', { name: 'حفظ التغييرات', exact: true }).click();
+  await expect.poll(() => changes.length).toBe(2);
+  expect(changes[1].access).toBe('read');
+  await panel.getByRole('button', { name: 'إلغاء الرابط', exact: true }).click();
+  await panel.getByRole('button', { name: 'تأكيد الإلغاء' }).click();
+  await expect(page.getByText('تم إلغاء الرابط. لم تُحذف أي ملفات.')).toBeVisible();
+  await expect(panel.getByText('أحمد', { exact: true })).toHaveCount(0);
+});
+
+test('directory drop preserves nested paths and equal file names in different subfolders', async ({ page }) => {
+  await mockApi(page); await loginFixture(page); const uploads = await uploadMock(page);
+  const paths: any[] = [];
+  await page.route('**/api/v1/folders/import-path', route => {
+    const body = route.request().postDataJSON(); paths.push(body);
+    return route.fulfill({ json: { folder_id: body.parts.join('/') } });
+  });
+  await page.goto('/'); await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  await page.locator('.border-dashed').evaluate(element => {
+    const file = () => ({ name: 'same.txt', isFile: true, isDirectory: false, file: (ok: any) => ok(new File(['hello'], 'same.txt', { type: 'text/plain' })) });
+    const dir = (name: string, children: any[]) => ({ name, isFile: false, isDirectory: true, createReader: () => { let read = false; return { readEntries: (ok: any) => { ok(read ? [] : children); read = true; } }; } });
+    const root = dir('المشروع', [dir('تقارير', [file()]), dir('عقود', [file()])]);
+    const dataTransfer = new DataTransfer(); Object.defineProperty(dataTransfer, 'items', { value: [{ kind: 'file', webkitGetAsEntry: () => root }] });
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect(page.getByText('المشروع/تقارير/same.txt')).toBeVisible();
+  await expect(page.getByText('المشروع/عقود/same.txt')).toBeVisible();
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('p[role="status"]')).toContainText('2');
+  expect(paths.map(p => p.parts)).toEqual([['المشروع', 'تقارير'], ['المشروع', 'عقود'], ['المشروع', 'تقارير'], ['المشروع', 'عقود']]);
+  expect(uploads.sessions.map(s => s.folder_id)).toEqual(['المشروع/تقارير', 'المشروع/عقود']);
+});
+
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  test(`team area remains usable ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport); await mockTeam(page); await page.goto('/');
+    if (viewport.width < 1024) await page.getByRole('button', { name: 'Menu', exact: true }).first().click();
+    await page.getByRole('button', { name: 'ملفات الفريق', exact: true }).click();
+    await page.getByRole('button', { name: /جمال علي/ }).click();
+    await expect(page.getByRole('button', { name: 'موظفون.txt', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  });
+}
+
+test('dropping an empty directory creates it without an upload session', async ({ page }) => {
+  await mockApi(page); await loginFixture(page); const uploads = await uploadMock(page);
+  const paths: any[] = [];
+  await page.route('**/api/v1/folders/import-path', route => {
+    paths.push(route.request().postDataJSON()); return route.fulfill({ json: { folder_id: 'empty' } });
+  });
+  await page.goto('/'); await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  await page.locator('.border-dashed').evaluate(element => {
+    const root = { name: 'فارغ', isDirectory: true, isFile: false, createReader: () => ({ readEntries: (ok: any) => ok([]) }) };
+    const dataTransfer = new DataTransfer(); Object.defineProperty(dataTransfer, 'items', { value: [{ kind: 'file', webkitGetAsEntry: () => root }] });
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect(page.locator('button[type="submit"]')).toBeEnabled();
+  await page.locator('button[type="submit"]').click();
+  await expect.poll(() => paths.length).toBe(1);
+  expect(paths[0].parts).toEqual(['فارغ']);
+  expect(uploads.sessions).toEqual([]);
+});
+
+test('team preview keeps download in the opened preview and hides write actions for read access', async ({ page }) => {
+  await mockTeam(page); await page.goto('/'); await page.getByRole('button', { name: 'ملفات الفريق', exact: true }).click();
+  await page.getByRole('button', { name: /بدر أحمد/ }).click();
+  await page.getByRole('button', { name: 'حسابات.txt', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'تحميل', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'حذف', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'مشاركة آمنة', exact: true })).toHaveCount(0);
 });

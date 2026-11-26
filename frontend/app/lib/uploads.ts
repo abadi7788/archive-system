@@ -1,36 +1,72 @@
+const relativePaths = new WeakMap<File, string>();
+export const relativeUploadPath = (file: File) => relativePaths.get(file) || file.webkitRelativePath || file.name;
+
 export const UPLOAD_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'];
 export const UPLOAD_ACCEPT = UPLOAD_EXTENSIONS.map((ext) => `.${ext}`).join(',');
 export const isAllowedUploadFile = (file: File) => UPLOAD_EXTENSIONS.includes(file.name.split('.').pop()?.toLowerCase() || '');
 
+export type DirectoryFiles = File[] & { directoryPaths?: string[][] };
+export const importDirectoryPaths = (files: File[]) => (files as DirectoryFiles).directoryPaths || [];
+
+export async function ensureImportPath(parts: string[], token: string, folderId?: string | null, ownerId?: string): Promise<string> {
+  const response = await fetch('/api/v1/folders/import-path', { method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_id: folderId || null, owner_id: ownerId || null, parts }) });
+  if (!response.ok) {
+    let message = 'Directory import failed';
+    try { message = (await response.json()).detail || message; } catch { /* proxy */ }
+    throw Object.assign(new Error(message), { status: response.status });
+  }
+  return (await response.json()).folder_id;
+}
+
+export async function createImportDirectories(paths: string[][], token: string, folderId?: string | null, ownerId?: string) {
+  // Only leaves are needed; the server creates their ancestors transactionally.
+  const branches = new Set<string>();
+  for (const path of paths) for (let depth = 1; depth < path.length; depth++) branches.add(JSON.stringify(path.slice(0, depth)));
+  const leaves = Array.from(new Map(paths.map(path => [JSON.stringify(path), path])).values()).filter(path => !branches.has(JSON.stringify(path)));
+  for (const parts of leaves) await ensureImportPath(parts, token, folderId, ownerId);
+}
+
 /** Read ALL directory-reader batches; browsers may return only 100 entries at a time. */
 export async function droppedFiles(transfer: DataTransfer): Promise<File[]> {
-  type Entry = { isFile: boolean; isDirectory: boolean; file: (ok: (file: File) => void, fail: (error: unknown) => void) => void;
+  type Entry = { name?: string; isFile: boolean; isDirectory: boolean; file: (ok: (file: File) => void, fail: (error: unknown) => void) => void;
     createReader: () => { readEntries: (ok: (entries: Entry[]) => void, fail: (error: unknown) => void) => void } };
   const entries = Array.from(transfer.items || []).filter((item) => item.kind === 'file')
     .map((item) => (item as unknown as { webkitGetAsEntry?: () => Entry | null }).webkitGetAsEntry?.());
   const fallback = Array.from(transfer.files || []);
   if (!entries.some(Boolean)) return fallback;
-  async function walk(entry: Entry): Promise<File[]> {
-    if (entry.isFile) return [await new Promise<File>((resolve, reject) => entry.file(resolve, reject))];
+  const directoryPaths: string[][] = [];
+  async function walk(entry: Entry, prefix = ''): Promise<File[]> {
+    const path = prefix + (entry.name || '');
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
+      relativePaths.set(file, path || file.name);
+      return [file];
+    }
     if (!entry.isDirectory) return [];
+    if (path) directoryPaths.push(path.split('/'));
     const files: File[] = [], reader = entry.createReader();
     while (true) {
       const batch = await new Promise<Entry[]>((resolve, reject) => reader.readEntries(resolve, reject));
       if (!batch.length) return files;
-      for (const child of batch) files.push(...await walk(child));
+      for (const child of batch) for (const file of await walk(child, path ? path + '/' : prefix)) files.push(file);
     }
   }
   const files: File[] = [];
-  for (const entry of entries) if (entry) files.push(...await walk(entry));
+  for (const entry of entries) if (entry) for (const file of await walk(entry)) files.push(file);
+  (files as DirectoryFiles).directoryPaths = directoryPaths;
   return files;
 }
 
-type UploadPayload = { file: File; folderId?: string | null; department?: string; classification?: string; keywords?: string; summary?: string };
+type UploadPayload = { file: File; folderId?: string | null; ownerId?: string; department?: string; classification?: string; keywords?: string; summary?: string };
 
 /** Persist only an opaque session ID. Re-selecting the same file resumes accepted bytes. */
 export async function uploadInChunks(payload: UploadPayload, token: string, userId: string,
   onProgress: (percent: number) => void, fallbackError: string): Promise<any> {
   const file = payload.file;
+  const parts = relativeUploadPath(file).split('/').slice(0, -1);
+  if (parts.length) payload = { ...payload, folderId: await ensureImportPath(parts, token, payload.folderId, payload.ownerId) };
   const digest = async (data: ArrayBuffer) => {
     // LAN installations may be served over HTTP, where WebCrypto.subtle is unavailable.
     const hash = globalThis.crypto?.subtle
@@ -60,7 +96,7 @@ export async function uploadInChunks(payload: UploadPayload, token: string, user
   }
   if (!id) {
     session = await request('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-      file_name: file.name, file_size: file.size, folder_id: payload.folderId || null,
+      file_name: file.name, file_size: file.size, owner_id: payload.ownerId || null, folder_id: payload.folderId || null,
       department: payload.department || null, classification: payload.classification || null,
       keywords: payload.keywords || null, summary: payload.summary || null,
     }) });

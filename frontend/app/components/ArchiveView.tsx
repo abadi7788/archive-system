@@ -2,7 +2,7 @@
 import FileThumbnail from './FileThumbnail';
 import DateField from './DateField';
 import RenameDialog from './RenameDialog';
-import { droppedFiles } from '../lib/uploads';
+import { droppedFiles, importDirectoryPaths } from '../lib/uploads';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AppIcon } from '../BrandMark';
 import { statusDisplayMeta, type TranslationKeys } from '../lib/i18n';
@@ -457,7 +457,7 @@ export default function ArchiveView({
     dragDepthRef.current = 0;
     setDraggingExternalFiles(false);
     const files = await droppedFiles(e.dataTransfer);
-    if (files.length > 0) {
+    if (files.length > 0 || importDirectoryPaths(files).length > 0) {
       await onBulkUploadFiles(files, selectedFolder || null);
     }
   }
@@ -486,7 +486,7 @@ export default function ArchiveView({
     }
 
     const files = await droppedFiles(e.dataTransfer);
-    if (files.length > 0) {
+    if (files.length > 0 || importDirectoryPaths(files).length > 0) {
       await onBulkUploadFiles(files, folder.id);
     }
   }

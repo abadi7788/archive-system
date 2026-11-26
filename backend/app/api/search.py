@@ -11,6 +11,8 @@ from app.api.access import (
     build_document_visibility_clause,
     build_user_display_map,
     get_visible_owner_ids,
+    workspace_owner,
+    can_manage_owner,
 )
 from app.api.deps import current_user
 from app.api.documents import build_folder_breadcrumbs, format_document_path
@@ -59,6 +61,7 @@ async def search_documents(
     classification: str | None = None,
     folder_id: UUID | None = None,
     owner_id: UUID | None = None,
+    root_only: bool = False,
     starred_only: bool = False,
     recent_only: bool = False,
     keyword: str | None = None,
@@ -66,6 +69,7 @@ async def search_documents(
     to_date: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ):
+    owner_id = await workspace_owner(user, db, owner_id)
     vis_clause = await build_document_visibility_clause(user, db)
     query = select(Document).where(vis_clause)
 
@@ -105,6 +109,8 @@ async def search_documents(
         query = query.where(Document.classification == classification)
     if folder_id:
         query = query.where(Document.folder_id == folder_id)
+    elif root_only:
+        query = query.where(Document.folder_id.is_(None))
     if keyword:
         query = query.where(Document.keywords.contains([keyword]))
     if from_date:
@@ -136,7 +142,7 @@ async def search_documents(
             folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
             snippet = _build_highlighted_snippet(d.extracted_text, cleaned_q, hit_snippet) or (d.summary or "")
             owner_info = owner_map.get(d.user_id)
-            can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
+            can_manage = await can_manage_owner(user, d.user_id, db)
             results.append(
                 {
                     "id": str(d.id),
@@ -170,7 +176,7 @@ async def search_documents(
     for d in rows:
         folder_breadcrumb, folder_path = format_document_path(d.folder_id, d.file_name, breadcrumbs)
         owner_info = owner_map.get(d.user_id)
-        can_manage = user.role == UserRole.ADMIN or (user.role != UserRole.VIEWER and d.user_id == user.id)
+        can_manage = await can_manage_owner(user, d.user_id, db)
         results.append(
             {
                 "id": str(d.id),
