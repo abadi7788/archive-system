@@ -12,6 +12,10 @@ RUN npm run build
 FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0 PORT=3000
+ARG SOURCE_REVISION=development
+ENV APP_REVISION=$SOURCE_REVISION
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

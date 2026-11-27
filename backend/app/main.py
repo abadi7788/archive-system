@@ -119,7 +119,7 @@ async def security_and_no_cache_headers(request: Request, call_next):
 @app.get("/health", include_in_schema=False)
 @app.get("/api/v1/health", include_in_schema=False)
 async def health():
-    return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"status": "ok", "revision": settings.app_revision}, headers={"Cache-Control": "no-store"})
 
 
 @app.middleware("http")
