@@ -17,6 +17,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
+from app.services.ocr_retry import request_ocr_retry
 from app.api.deps import admin_user
 from app.api.documents import run_ocr_batch_background
 from app.core.config import settings
@@ -169,10 +170,11 @@ async def update_gemini_settings(
         )
     )
     await db.commit()
+    request_ocr_retry()
     if row:
         await db.refresh(row)
     return {
-        "message": "تم حفظ إعدادات مفتاح Gemini بنجاح.",
+        "message": "تم حفظ إعدادات مفتاح Gemini.",
         **_serialize_gemini_settings(row),
     }
 
@@ -523,6 +525,7 @@ async def create_gemini_key(payload: PoolKeyCreate, actor: Annotated[User, Depen
     usage.daily_limit = payload.daily_limit
     db.add(AuditLog(actor_id=actor.id, action='gemini_key.created', resource_type='system_api_key', resource_id=str(row.id), detail={"label": row.label, "daily_limit": payload.daily_limit}))
     await db.commit()
+    request_ocr_retry()
     return {"id": str(row.id)}
 
 
@@ -542,6 +545,7 @@ async def update_gemini_key(key_id: str, payload: PoolKeyUpdate, actor: Annotate
             usage.daily_limit = payload.daily_limit
         db.add(AuditLog(actor_id=actor.id, action='gemini_key.updated', resource_type='environment_api_key', detail={"daily_limit": payload.daily_limit}))
         await db.commit()
+        request_ocr_retry()
         return {"ok": True}
     if kind not in {'system', 'user'}:
         raise HTTPException(422, 'Invalid key kind')
@@ -571,6 +575,7 @@ async def update_gemini_key(key_id: str, payload: PoolKeyUpdate, actor: Annotate
         raise HTTPException(422, 'Personal key is managed in user settings')
     db.add(AuditLog(actor_id=actor.id, action='gemini_key.updated', resource_type=kind + '_api_key', resource_id=key_id, detail=payload.model_dump(exclude_none=True)))
     await db.commit()
+    request_ocr_retry()
     return {"ok": True}
 
 

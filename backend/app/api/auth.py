@@ -184,7 +184,7 @@ async def change_password(
     )
     await db.commit()
     await db.refresh(user)
-    return {"message": "تم تحديث كلمة المرور بنجاح", "user": _serialize_user(user)}
+    return {"message": "تم تحديث كلمة المرور", "user": _serialize_user(user)}
 
 
 @router.post("/admin/master-challenge")

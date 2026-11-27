@@ -177,8 +177,8 @@ async def _run_ocr_background(
             doc.processing_status = "queued"
             doc.processing_error = "Extraction keys currently rate limited; awaiting retry"
         except GeminiRequestFailed:
-            doc.processing_status = "failed"
-            doc.processing_error = "Text extraction provider error; administrator review required"
+            doc.processing_status = "queued"
+            doc.processing_error = "Text extraction provider is unavailable; awaiting retry"
         except Exception as exc:
             logger.warning("Background extraction failed for document %s (%s)", document_id, type(exc).__name__)
             doc.processing_status = "failed"

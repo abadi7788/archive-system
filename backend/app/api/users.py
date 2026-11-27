@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.access import build_user_display_map, get_visible_owner_ids
 from app.api.deps import admin_user, current_user
 from app.core.security import encrypt_secret, hash_password
+from app.services.ocr_retry import request_ocr_retry
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User, UserRole
@@ -138,6 +139,8 @@ async def create_user(
         )
     )
     await db.commit()
+    if key:
+        request_ocr_retry()
     await db.refresh(user)
     return _user_dict(user)
 
@@ -208,6 +211,8 @@ async def update_user(
         )
     )
     await db.commit()
+    if payload.gemini_api_key is not None and raw_key:
+        request_ocr_retry()
     return _user_dict(user)
 
 
