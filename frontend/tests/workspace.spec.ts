@@ -394,13 +394,14 @@ test('rename locks the extension, works for folders, and is hidden for viewers',
   await dialog.getByRole('button', { name: 'إعادة تسمية', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(patch).toEqual({ name: 'اسم جديد' });
+  await page.locator('.folder-tile').first().hover();
   await page.getByRole('button', { name: 'إعادة تسمية: مجلد الاختبار', exact: true }).click();
   await expect(dialog.getByRole('textbox')).toHaveValue('مجلد الاختبار');
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ json: { ...user, role: 'viewer' } }));
   await page.reload();
-  await expect(page.locator('tbody tr')).toHaveCount(41);
+  await expect(page.locator('tbody tr')).toHaveCount(40);
   await expect(page.getByRole('button', { name: /^إعادة تسمية:/ })).toHaveCount(0);
 });
 
@@ -682,4 +683,75 @@ test('team preview keeps download in the opened preview and hides write actions 
   await expect(dialog.getByRole('button', { name: 'تحميل', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'حذف', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'مشاركة آمنة', exact: true })).toHaveCount(0);
+});
+
+async function mockFolderGrid(page: Page) {
+  await mockApi(page); await loginFixture(page);
+  const folders = Array.from({ length: 12 }, (_, i) => ({ id: `folder-${i}`, name: i === 11 ? 'اسم مجلد طويل لاختبار الالتفاف دون قص الأزرار أو خروج المحتوى عن عرض الشاشة' : `مجلد ${i + 1}`, parent_id: null, item_count: i, subfolder_count: 0, can_manage: true }));
+  await page.route('**/api/v1/folders', route => route.fulfill({ json: folders }));
+}
+
+test('folders use an unframed responsive icon grid in both archive document modes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockFolderGrid(page); await page.goto('/');
+  const grid = page.locator('.folder-icon-grid');
+  await expect(grid.locator('.folder-tile')).toHaveCount(12);
+  const columns = () => grid.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length);
+  expect(await columns()).toBe(5);
+  await expect(grid.locator('.folder-tile-count').first()).toHaveText('0 عنصر');
+  await expect(grid.locator('svg[data-folder-shape="layered"]')).toHaveCount(12);
+  expect(await grid.locator('.folder-tile').first().evaluate(node => ({ background: getComputedStyle(node).backgroundColor, border: getComputedStyle(node).borderTopColor }))).toEqual({ background: 'rgba(0, 0, 0, 0)', border: 'rgba(0, 0, 0, 0)' });
+  await page.getByRole('button', { name: 'شبكة', exact: true }).click();
+  expect(await columns()).toBe(5);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect.poll(columns).toBe(6);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(columns).toBe(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const name = grid.locator('.folder-tile-name').first(), icon = grid.locator('svg').first();
+  expect((await name.boundingBox())!.y).toBeGreaterThan((await icon.boundingBox())!.y + (await icon.boundingBox())!.height);
+});
+
+test('folder tools appear on hover and keyboard focus without wrapping the icon in a card', async ({ page }) => {
+  await mockFolderGrid(page); await page.goto('/');
+  const tile = page.locator('.folder-tile').first(), actions = tile.locator('.folder-tile-actions');
+  await expect(actions).toHaveCSS('opacity', '0');
+  await tile.hover(); await expect(actions).toHaveCSS('opacity', '1');
+  await page.getByRole('heading', { name: 'الأرشيف', exact: true }).hover();
+  await expect(actions).toHaveCSS('opacity', '0');
+  await tile.locator('.folder-tile-open').focus();
+  await expect(actions).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Tab');
+  await expect(tile.getByRole('button', { name: 'إعادة تسمية: مجلد 1', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog').getByRole('textbox')).toHaveValue('مجلد 1');
+  await page.keyboard.press('Escape');
+  await tile.locator('.folder-tile-open').click();
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('button', { name: 'مجلد 1', exact: true })).toBeVisible();
+});
+
+test('folder SVG gradients follow light/dark primary theme colors with unique paint IDs', async ({ page }) => {
+  await mockFolderGrid(page); await page.goto('/');
+  const color = () => page.locator('.folder-tile svg stop').first().evaluate(node => getComputedStyle(node).stopColor);
+  await expect(page.locator('.folder-tile')).toHaveCount(12);
+  const light = await color();
+  await page.getByRole('button', { name: 'المظهر', exact: true }).click();
+  await expect.poll(color).not.toBe(light);
+  const ids = await page.locator('.folder-tile linearGradient').evaluateAll(nodes => nodes.map(node => node.id));
+  expect(new Set(ids).size).toBe(24);
+  const dark = await color();
+  await page.evaluate(() => document.documentElement.style.setProperty('--brand-primary', '#7356bd'));
+  await expect.poll(color).not.toBe(dark);
+});
+
+test('folder icon drop targets still move selected documents', async ({ page }) => {
+  await mockFolderGrid(page); await page.goto('/');
+  let move: any;
+  await page.route('**/api/v1/documents/bulk/move', route => { move = route.request().postDataJSON(); return route.fulfill({ json: { moved: 1, skipped: 0 } }); });
+  await page.locator('.folder-tile').first().evaluate(node => {
+    const dataTransfer = new DataTransfer(); dataTransfer.setData('application/x-archive-doc-ids', JSON.stringify(['doc-0']));
+    node.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+    node.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect.poll(() => move).toEqual({ document_ids: ['doc-0'], folder_id: 'folder-0' });
 });

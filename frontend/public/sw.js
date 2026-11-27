@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'archive-yemany-shell-v9';
+const CACHE_VERSION = 'archive-yemany-shell-v10';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',

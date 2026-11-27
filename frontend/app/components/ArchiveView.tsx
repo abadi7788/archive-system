@@ -1,4 +1,5 @@
 'use client';
+import FolderTile from './FolderTile';
 import FileThumbnail from './FileThumbnail';
 import DateField from './DateField';
 import RenameDialog from './RenameDialog';
@@ -526,6 +527,25 @@ export default function ArchiveView({
   const quickTypeLabels: Record<QuickTypeFilter, string> = isRtl
     ? { all: 'الكل', pdf: 'PDF', image: 'صور' }
     : { all: 'All', pdf: 'PDF', image: 'Images' };
+
+  const folderGrid = childFolders.length > 0 && <section className="folder-browser" aria-label={t.foldersTitle}>
+    <h3 className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">{t.foldersTitle} ({childFolders.length})</h3>
+    <div className="folder-icon-grid" role="list">
+      {childFolders.map(folder => {
+        const canManage = folder.can_manage !== false && user.role !== 'viewer';
+        return <FolderTile key={folder.id} name={folder.name}
+          subtitle={`${(folder.item_count || 0) + (folder.subfolder_count || 0)} ${t.itemsCount}`}
+          onOpen={() => onSelectFolder(folder.id)}
+          renameLabel={t.rename} deleteLabel={t.moveToTrash}
+          onRename={canManage ? () => setRenameTarget({ kind: 'folder', item: folder }) : undefined}
+          onDelete={canManage ? () => setFolderToTrash(folder) : undefined}
+          dropActive={dragOverFolderId === folder.id}
+          onDragOver={event => { if (canManage) { event.preventDefault(); event.stopPropagation(); setDragOverFolderId(folder.id); } }}
+          onDragLeave={event => { event.stopPropagation(); if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null); }}
+          onDrop={event => handleFolderRowDrop(event, folder)} />;
+      })}
+    </div>
+  </section>;
 
   return (
     <div
@@ -1177,7 +1197,8 @@ export default function ArchiveView({
             {/* =========================================================== */}
             {viewMode === 'list' ? (
               <div className="flex-1 min-h-0 overflow-auto overscroll-contain archive-items file-list-scroll">
-                <table className="w-full text-start border-collapse">
+                {folderGrid && <div className="p-4 sm:p-5">{folderGrid}</div>}
+                <table hidden={childFolders.length > 0 && !displayedDocs.length && !busy} className="w-full text-start border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-[#0B192B]/40">
                       <th className="py-2.5 ps-4 pe-1 w-9 text-center">
@@ -1239,98 +1260,6 @@ export default function ArchiveView({
                         ))}
                       </>
                     )}
-
-                    {/* Subfolder Rows */}
-                    {childFolders.map((folder) => {
-                      const canManageFolder = folder.can_manage !== false && user.role !== 'viewer';
-                      const isDropTarget = dragOverFolderId === folder.id;
-                      return (
-                        <tr
-                          key={`folder-${folder.id}`}
-                          onContextMenu={(event) => { if (canManageFolder) { event.preventDefault(); setRenameTarget({ kind: 'folder', item: folder }); } }}
-                          onClick={() => onSelectFolder(folder.id)}
-                          onDragOver={(e) => {
-                            if (!canManageFolder) return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDragOverFolderId(folder.id);
-                          }}
-                          onDragLeave={(e) => {
-                            e.stopPropagation();
-                            if (dragOverFolderId === folder.id) setDragOverFolderId(null);
-                          }}
-                          onDrop={(e) => handleFolderRowDrop(e, folder)}
-                          title={canManageFolder ? t.dropOntoFolderHint : undefined}
-                          className={`group cursor-pointer transition-colors ${
-                            isDropTarget
-                              ? 'bg-brand-50 dark:bg-[#132942] ring-2 ring-inset ring-[#0891B2]'
-                              : 'hover:bg-slate-50/90 dark:hover:bg-[#132942]/50'
-                          }`}
-                        >
-                          <td className="py-3 ps-4 pe-1 text-center" />
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
-                                <AppIcon name={isDropTarget ? 'folderOpen' : 'folder'} size={17} />
-                              </span>
-                              <div className="min-w-0">
-                                <div className="font-semibold text-[#0F2137] dark:text-slate-100 truncate">
-                                  {folder.name}
-                                </div>
-                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1.5 mt-0.5 tabular-nums">
-                                  <span>
-                                    {folder.item_count || 0} {t.itemsCount}
-                                  </span>
-                                  {Boolean(folder.subfolder_count) && (
-                                    <>
-                                      <span aria-hidden="true">·</span>
-                                      <span>
-                                        {folder.subfolder_count} {t.subfoldersCount}
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden md:table-cell">
-                            {t.foldersTitle}
-                          </td>
-                          {showOwnerColumn && (
-                            <td className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden sm:table-cell truncate max-w-[140px]">
-                              {folder.owner_name || folder.owner_username || '—'}
-                            </td>
-                          )}
-                          <td
-                            dir="ltr"
-                            className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 hidden sm:table-cell whitespace-nowrap tabular-nums text-start"
-                          >
-                            {formatDateISO(folder.updated_at)}
-                          </td>
-                          <td className="py-3 px-3 text-xs text-slate-400 dark:text-slate-500 text-end">
-                            —
-                          </td>
-                          <td className="py-3 px-3 text-end">
-                            {canManageFolder && <span className="inline-flex items-center"><button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'folder', item: folder }); }} aria-label={`${t.rename}: ${folder.name}`} title={t.rename}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button></span>}
-                            {canManageFolder && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFolderToTrash(folder);
-                                }}
-                                title={t.moveToTrash}
-                                aria-label={t.moveToTrash}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all"
-                              >
-                                <AppIcon name="trash" size={14} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
 
                     {/* Document Rows */}
                     {displayedDocs.map((doc) => {
@@ -1546,69 +1475,7 @@ export default function ArchiveView({
               /* VIEW MODE B: ARCHITECTURAL LUXURY CARD GRID                 */
               /* =========================================================== */
               <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain archive-items archive-grid-scroll p-4 sm:p-5 space-y-5 bg-[#F8FAFC]/60 dark:bg-[#0B192B]/30">
-                {/* Subfolder Cards */}
-                {childFolders.length > 0 && (
-                  <div className="space-y-2.5">
-                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                      {t.foldersTitle} ({childFolders.length})
-                    </h3>
-                    <div className="archive-item-grid grid gap-3">
-                      {childFolders.map((folder) => {
-                        const canManageFolder = folder.can_manage !== false && user.role !== 'viewer';
-                        const isDropTarget = dragOverFolderId === folder.id;
-                        return (
-                          <div
-                            key={`grid-folder-${folder.id}`}
-                            onClick={() => onSelectFolder(folder.id)}
-                            onDragOver={(e) => {
-                              if (!canManageFolder) return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDragOverFolderId(folder.id);
-                            }}
-                            onDragLeave={(e) => {
-                              e.stopPropagation();
-                              if (dragOverFolderId === folder.id) setDragOverFolderId(null);
-                            }}
-                            onDrop={(e) => handleFolderRowDrop(e, folder)}
-                            className={`group card card-interactive p-3.5 flex items-center justify-between gap-3 cursor-pointer ${
-                              isDropTarget ? 'ring-2 ring-[#0891B2] bg-brand-50/70 dark:bg-[#132942]' : ''
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className="archive-folder-icon w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20 grid place-items-center shrink-0">
-                                <AppIcon name={isDropTarget ? 'folderOpen' : 'folder'} size={19} />
-                              </span>
-                              <div className="min-w-0">
-                                <div className="text-sm font-bold text-[#0F2137] dark:text-white truncate">
-                                  {folder.name}
-                                </div>
-                                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
-                                  {folder.item_count || 0} {t.itemsCount}
-                                </div>
-                              </div>
-                            </div>
-                            {canManageFolder && <span className="inline-flex items-center"><button type="button" onClick={(event) => { event.stopPropagation(); setRenameTarget({ kind: 'folder', item: folder }); }} aria-label={`${t.rename}: ${folder.name}`} title={t.rename}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:text-slate-300"><AppIcon name="edit" size={14} /></button></span>}
-                            {canManageFolder && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFolderToTrash(folder);
-                                }}
-                                title={t.moveToTrash}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                              >
-                                <AppIcon name="trash" size={14} />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {folderGrid}
 
                 {/* Document Cards */}
                 {displayedDocs.length > 0 && (

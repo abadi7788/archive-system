@@ -5,6 +5,7 @@ import DocumentModal from '../DocumentModal';
 import { localizeApiError } from '../lib/errorLocalizer';
 import type { TranslationKeys } from '../lib/i18n';
 import { createImportDirectories, uploadInChunks } from '../lib/uploads';
+import FolderTile from './FolderTile';
 import UploadView from './UploadView';
 import RenameDialog from './RenameDialog';
 import EditDocumentModal from './EditDocumentModal';
@@ -101,11 +102,10 @@ export default function TeamView({ token, user, locale, t, onPersonalChanged }: 
     {feedback}
     {!owner ? <section className="card p-5 space-y-4">
       <div className="flex justify-between items-center gap-3"><h3 className="font-bold">{ar ? 'المساحات المتاحة' : 'Available workspaces'} · {peers.length}</h3><button type="button" disabled={loading} className="btn btn-secondary text-xs" onClick={loadPeers}>{ar ? 'تحديث' : 'Refresh'}</button></div>
-      {loading ? <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p> : peers.length ? <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{peers.map(peer => <button type="button" key={peer.id} onClick={() => { setOwner(peer); setSelected(''); setNotice(''); }} className="text-start rounded-2xl border border-slate-200 dark:border-slate-700 p-5 hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-navy-deep transition-colors group">
-        <div className="flex justify-between items-start"><AppIcon name="folder" size={38} className="text-amber-500" /><span className="text-[11px] rounded-md bg-slate-100 dark:bg-navy-deep px-2 py-1">{peer.access === 'full' ? (ar ? 'تحكم كامل' : 'Full control') : (ar ? 'عرض وتحميل' : 'View & download')}</span></div>
-        <h4 className="font-bold text-base mt-4">{peer.display_name}</h4><p className="text-xs text-slate-500 mt-1">{peer.job_title || peer.department || `@${peer.username}`}</p>
-        <p className="text-xs text-brand-600 dark:text-brand-300 mt-5">{ar ? 'فتح مساحة الموظف ←' : 'Open workspace →'}</p>
-      </button>)}</div> : <div className="py-12 text-center text-slate-500"><AppIcon name="folder" size={42} className="mx-auto mb-4" />{ar ? 'لا توجد مساحات فريق متاحة حاليًا.' : 'No team workspaces are currently available.'}</div>}
+      {loading ? <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p> : peers.length ? <div className="folder-browser"><div className="folder-icon-grid" role="list">{peers.map(peer => <FolderTile key={peer.id} name={peer.display_name}
+        subtitle={peer.access === 'full' ? (ar ? 'تحكم كامل' : 'Full control') : (ar ? 'عرض وتحميل' : 'View & download')}
+        detail={peer.job_title || peer.department || `@${peer.username}`}
+        onOpen={() => { setOwner(peer); setSelected(''); setNotice(''); }} />)}</div></div> : <div className="py-12 text-center text-slate-500"><AppIcon name="folder" size={42} className="mx-auto mb-4" />{ar ? 'لا توجد مساحات فريق متاحة حاليًا.' : 'No team workspaces are currently available.'}</div>}
     </section> : <section className="card p-4 sm:p-5 space-y-5">
       <div className="flex flex-wrap items-center gap-2 text-sm"><button type="button" className="btn btn-secondary text-xs" onClick={() => setSelected('')}>{owner.display_name}</button>{trail.map(f => <button type="button" key={f.id} onClick={() => setSelected(f.id)} className="text-brand-600 dark:text-brand-300"> / {f.name}</button>)}
         <span className="ms-auto text-xs rounded-lg bg-slate-100 dark:bg-navy-deep px-3 py-2">{full ? (ar ? 'تحكم كامل' : 'Full control') : (ar ? 'عرض وتحميل فقط' : 'View and download only')}</span></div>
@@ -115,7 +115,11 @@ export default function TeamView({ token, user, locale, t, onPersonalChanged }: 
       {full && <div className="flex items-center justify-between gap-3 rounded-xl bg-brand-50 dark:bg-navy-deep p-3"><p className="text-xs">{ar ? 'الإضافات هنا تُحفظ في مساحة الموظف، لا في أرشيفك.' : 'New items here belong to this employee, not to your archive.'}</p><button type="button" className="btn btn-secondary text-xs shrink-0" onClick={() => setUploading(true)}><AppIcon name="upload" size={16} />{ar ? 'إضافة إلى هذه المساحة' : 'Add to this workspace'}</button></div>}
       {newFolder !== null && <form className="flex flex-wrap gap-2" onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await mutate('/folders', 'POST', { name: newFolder, parent_id: selected || null, owner_id: owner.id }); setNewFolder(null); } catch (e: any) { setError(e.message); } finally { setBusy(false); } }}><input autoFocus required maxLength={180} aria-label={t.renameNameLabel} className="field flex-1" value={newFolder} onChange={e => setNewFolder(e.target.value)} /><button className="btn btn-primary" disabled={busy}>{t.saveFolder}</button><button type="button" className="btn btn-secondary" onClick={() => setNewFolder(null)}>{t.cancel}</button></form>}
       {loading ? <p role="status">{ar ? 'جارٍ تحميل الملفات…' : 'Loading files…'}</p> : <>
-        {!appliedSearch && visibleFolders.length > 0 && <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">{visibleFolders.map(folder => <div key={folder.id} className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex gap-2 items-center"><button type="button" className="flex gap-3 items-center min-w-0 flex-1 text-start" onClick={() => setSelected(folder.id)}><AppIcon name="folder" size={28} className="text-amber-500 shrink-0" /><span className="truncate font-semibold text-sm">{folder.name}</span></button>{full && <><button type="button" className="p-2" aria-label={`${t.rename}: ${folder.name}`} onClick={() => setRename({ kind: 'folder', item: folder })}><AppIcon name="edit" size={16} /></button><button type="button" className="p-2 text-rose-600" aria-label={`${ar ? 'حذف' : 'Delete'}: ${folder.name}`} onClick={() => setDeletingFolder(folder)}><AppIcon name="trash" size={16} /></button></>}</div>)}</div>}
+        {!appliedSearch && visibleFolders.length > 0 && <section className="folder-browser" aria-label={t.foldersTitle}><div className="folder-icon-grid" role="list">{visibleFolders.map(folder => <FolderTile key={folder.id} name={folder.name}
+          subtitle={`${(folder.item_count || 0) + (folder.subfolder_count || 0)} ${t.itemsCount}`}
+          onOpen={() => setSelected(folder.id)} renameLabel={t.rename} deleteLabel={ar ? 'حذف' : 'Delete'}
+          onRename={full && folder.can_manage !== false ? () => setRename({ kind: 'folder', item: folder }) : undefined}
+          onDelete={full && folder.can_manage !== false ? () => setDeletingFolder(folder) : undefined} />)}</div></section>}
         {visibleDocs.length > 0 ? <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">{visibleDocs.map(doc => <article key={doc.id} className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
           <button type="button" className="block w-full bg-slate-50 dark:bg-navy-deep p-3" onClick={() => open(doc)} disabled={busy} aria-label={`${ar ? 'معاينة' : 'Preview'}: ${doc.file_name}`}><FileThumbnail doc={doc} token={token} /></button>
           <div className="p-4 space-y-3"><button type="button" className="font-bold text-sm break-all text-start" onClick={() => open(doc)}>{doc.file_name}</button><p className="text-xs text-slate-500">{formatBytes(doc.file_size || 0)}{appliedSearch && doc.folder_breadcrumb ? ` · ${doc.folder_breadcrumb}` : ''}</p>

@@ -1,0 +1,4 @@
+archive-yemany {
+    tls internal
+    reverse_proxy frontend:3000
+}
