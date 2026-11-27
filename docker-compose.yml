@@ -59,16 +59,29 @@ services:
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: /api/v1
-    ports:
-      - "80:3000"
     depends_on:
       backend:
         condition: service_healthy
     networks: [archive]
 
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+    networks: [archive]
+
 volumes:
   postgres_data:
   archive_documents:
+  caddy_data:
+  caddy_config:
 
 networks:
   archive:
