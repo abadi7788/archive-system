@@ -1,3 +1,4 @@
+import { WORKFLOW_TEXT } from './workflowI18n';
 import type { LocaleCode } from '../components/types';
 
 export type LanguageMeta = {
@@ -32,7 +33,7 @@ export function isSupportedLocale(val?: string | null): val is LocaleCode {
   return LANGUAGES.some((l) => l.code === val);
 }
 
-export type TranslationKeys = {
+export type TranslationKeys = typeof WORKFLOW_TEXT['en'] & {
   appName: string;
   appShort: string;
   // Navigation
@@ -364,6 +365,7 @@ export type TranslationKeys = {
 };
 
 const ar: TranslationKeys = {
+  ...WORKFLOW_TEXT.ar,
   appName: 'Archive YemanY',
   appShort: 'Archive YemanY',
   navArchive: 'الأرشيف',
@@ -485,7 +487,7 @@ const ar: TranslationKeys = {
   removeFile: 'إزالة الملف',
   uploadSubmit: 'رفع المستند',
   uploadingProgress: 'جاري الرفع...',
-  uploadSuccess: 'تم رفع المستند بنجاح',
+  uploadSuccess: 'تم رفع المستند',
   openInArchive: 'عرض في الأرشيف',
   uploadAnother: 'رفع ملف آخر',
   viewerNoUploadTitle: 'صلاحية عرض فقط',
@@ -612,7 +614,7 @@ const ar: TranslationKeys = {
   auditResource: 'العنصر',
   auditTime: 'التاريخ والوقت',
   noAuditEvents: 'لا توجد سجلات بعد.',
-  savedSuccess: 'تم الحفظ بنجاح.',
+  savedSuccess: 'تم الحفظ.',
   errorGeneric: 'تعذر إتمام الطلب.',
   passwordMismatch: 'كلمة المرور الجديدة وتأكيدها غير متطابقتين.',
   passwordPolicyError: 'يجب أن تتكون كلمة المرور من 6 أحرف على الأقل وتتضمن حرفين ورقماً أو رمزاً.',
@@ -658,7 +660,7 @@ const ar: TranslationKeys = {
   bulkMoveConfirm: 'نقل الآن',
   bulkTrashModalTitle: 'نقل الملفات المحددة إلى سلة المحذوفات',
   bulkTrashModalDesc: 'سيتم نقل جميع الملفات المحددة إلى سلة المحذوفات ويمكن استعادتها لاحقاً.',
-  movedToFolderSuccess: 'تم نقل الملف إلى المجلد بنجاح.',
+  movedToFolderSuccess: 'تم نقل الملف إلى المجلد.',
   dropOntoFolderHint: 'أفلت هنا لنقل الملف أو الرفع داخل المجلد',
   selectAllFiles: 'تحديد جميع الملفات',
   manageDepartmentsTitle: 'الأقسام المعتمدة',
@@ -672,6 +674,7 @@ const ar: TranslationKeys = {
 };
 
 const en: TranslationKeys = {
+  ...WORKFLOW_TEXT.en,
   appName: 'Archive YemanY',
   appShort: 'Archive YemanY',
   navArchive: 'Archive',
@@ -793,7 +796,7 @@ const en: TranslationKeys = {
   removeFile: 'Remove File',
   uploadSubmit: 'Upload Document',
   uploadingProgress: 'Uploading...',
-  uploadSuccess: 'Document uploaded successfully',
+  uploadSuccess: 'Document uploaded',
   openInArchive: 'Open in Archive',
   uploadAnother: 'Upload Another',
   viewerNoUploadTitle: 'Read-Only Access',
@@ -920,7 +923,7 @@ const en: TranslationKeys = {
   auditResource: 'Resource',
   auditTime: 'Timestamp',
   noAuditEvents: 'No audit events recorded yet.',
-  savedSuccess: 'Saved successfully.',
+  savedSuccess: 'Saved.',
   errorGeneric: 'Unable to complete the request.',
   passwordMismatch: 'New password and confirmation do not match.',
   passwordPolicyError: 'Password must be at least 6 characters with at least 2 letters and a number or symbol.',
@@ -966,7 +969,7 @@ const en: TranslationKeys = {
   bulkMoveConfirm: 'Move Files',
   bulkTrashModalTitle: 'Move Selected Files to Recycle Bin',
   bulkTrashModalDesc: 'All selected files will be moved to the Recycle Bin and can be restored later.',
-  movedToFolderSuccess: 'Moved file to folder successfully.',
+  movedToFolderSuccess: 'Moved file to folder.',
   dropOntoFolderHint: 'Drop here to move or upload into folder',
   selectAllFiles: 'Select all files',
   manageDepartmentsTitle: 'Standardized Departments',
@@ -1595,9 +1598,9 @@ const partialLocales: Partial<Record<LocaleCode, Partial<TranslationKeys>>> = {
 };
 
 export function getTranslations(locale: LocaleCode): TranslationKeys {
-  if (locale === 'ar') return ar;
-  if (locale === 'en') return en;
-  return { ...en, ...(partialLocales[locale] || {}) };
+  if (locale === 'ar') return { ...ar, ...WORKFLOW_TEXT.ar };
+  if (locale === 'en') return { ...en, ...WORKFLOW_TEXT.en };
+  return { ...en, ...(partialLocales[locale] || {}), ...WORKFLOW_TEXT[locale] };
 }
 
 export function roleDisplayLabel(role: string, t: TranslationKeys): string {

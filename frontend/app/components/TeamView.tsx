@@ -4,6 +4,7 @@ import { AppIcon } from '../BrandMark';
 import DocumentModal from '../DocumentModal';
 import { localizeApiError } from '../lib/errorLocalizer';
 import type { TranslationKeys } from '../lib/i18n';
+import { uploadNotice } from '../lib/workflowI18n';
 import { createImportDirectories, uploadInChunks } from '../lib/uploads';
 import FolderTile from './FolderTile';
 import UploadView from './UploadView';
@@ -13,8 +14,8 @@ import FileThumbnail from './FileThumbnail';
 import { type DocItem, type FolderItem, type LocaleCode, type User, formatBytes } from './types';
 
 type Peer = { id: string; display_name: string; username: string; job_title?: string; department?: string; access: 'read' | 'full' };
-export default function TeamView({ token, user, locale, t, onPersonalChanged }: {
-  token: string; user: User; locale: LocaleCode; t: TranslationKeys; onPersonalChanged: () => Promise<void>;
+export default function TeamView({ token, user, locale, t, onNotify, onPersonalChanged }: {
+  token: string; user: User; locale: LocaleCode; t: TranslationKeys; onNotify: (message: string) => void; onPersonalChanged: () => Promise<void>;
 }) {
   const ar = locale === 'ar';
   const [peers, setPeers] = useState<Peer[]>([]), [owner, setOwner] = useState<Peer | null>(null);
@@ -56,6 +57,12 @@ export default function TeamView({ token, user, locale, t, onPersonalChanged }: 
   }
   useEffect(() => { void loadPeers(); return () => { requestSequence.current++; if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); }; }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadWorkspace(); }, [owner?.id, appliedSearch, selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasPendingDocuments = docs.some(doc => doc.status === 'queued' || doc.status === 'processing');
+  useEffect(() => {
+    if (!owner || uploading || !hasPendingDocuments) return;
+    const timer = window.setInterval(() => { if (!document.hidden) void loadWorkspace(); }, 10000);
+    return () => window.clearInterval(timer);
+  }, [owner?.id, selected, appliedSearch, uploading, hasPendingDocuments]); // eslint-disable-line react-hooks/exhaustive-deps
   function closePreview() { if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); previewUrl.current = ''; setPreview(null); }
   async function open(doc: DocItem) {
     setBusy(true); setError('');
@@ -92,11 +99,11 @@ export default function TeamView({ token, user, locale, t, onPersonalChanged }: 
   if (uploading && owner) return <div className="space-y-4">{feedback}<UploadView key={`${owner.id}:${selected}`} user={user} folders={folders} defaultFolderId={selected} departments={[]} categories={[]} t={t}
     onCreateDirectories={async (paths, folderId) => { try { await createImportDirectories(paths, token, folderId, owner.id); } catch (e: any) { throw new Error(localizeApiError(e.message, e.status || 0, locale, t)); } }}
     onUpload={(payload, onProgress) => uploadInChunks({ ...payload, ownerId: owner.id }, token, user.id, onProgress, t.errorGeneric).catch(e => { throw new Error(localizeApiError(e.message, e.status || 0, locale, t)); })}
-    onFinished={loadWorkspace} onGoArchive={() => { setUploading(false); void loadWorkspace(); }} /></div>;
+    onFinished={async count => { await loadWorkspace(); onNotify(count ? uploadNotice(count, locale) : t.savedSuccess); }} onGoArchive={() => { setUploading(false); void loadWorkspace(); }} /></div>;
   return <div className="space-y-5">
     <section className="rounded-2xl bg-gradient-to-l from-[#0E7490] to-[#0F2137] text-white p-6 flex flex-wrap justify-between gap-4">
       <div className="flex gap-4 items-start"><AppIcon name="users" size={32} /><div><h2 className="text-xl font-bold">{owner ? owner.display_name : (ar ? 'ملفات الفريق' : 'Team files')}</h2>
-        <p className="text-sm text-white/80 mt-2">{owner ? (ar ? 'أنت داخل مساحة مستقلة. أرشيفك الشخصي لم يتغير.' : 'A separate workspace. Your personal archive stays unchanged.') : (ar ? 'مجلد مستقل لكل زميل متاح لك، دون مشاركة بين الزملاء الآخرين.' : 'One separate workspace for each available colleague. No access to their other relationships.')}</p></div></div>
+        <p className="text-sm text-white/80 mt-2">{owner ? (ar ? 'أنت داخل مساحة مستقلة. أرشيفك الشخصي لم يتغير.' : 'A separate workspace. Your personal archive stays unchanged.') : t.teamWorkspaceIntro}</p></div></div>
       {owner && <button className="btn btn-secondary self-center" type="button" onClick={() => { requestSequence.current++; setOwner(null); setSelected(''); setSearch(''); setAppliedSearch(''); setDocs([]); setFolders([]); void loadPeers(); }}>{ar ? 'كل مساحات الفريق' : 'All team workspaces'}</button>}
     </section>
     {feedback}

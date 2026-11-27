@@ -1,3 +1,5 @@
+import { getTranslations, LANGUAGES } from '../app/lib/i18n';
+import { cleanNotice, uploadNotice } from '../app/lib/workflowI18n';
 import { test, expect, type Page } from '@playwright/test';
 
 const user = { id: '11111111-1111-4111-8111-111111111111', username: 'admin', full_name: 'مدير النظام', role: 'admin', preferred_language: 'ar', preferred_theme: 'light', can_print: true };
@@ -470,7 +472,8 @@ test('multi-file Office/TXT upload applies shared metadata and retries interrupt
   await page.getByLabel('القسم', { exact: true }).fill('Finance');
   await page.locator('button[type="submit"]').click();
   await expect.poll(() => uploads.sessions.length).toBe(2);
-  await expect(page.locator('p[role="status"]')).toContainText('2');
+  await expect(page.locator('[aria-live="polite"] [role="status"]')).toHaveText('تم رفع مستندين');
+  await expect(page.locator('form p[role="status"]')).toHaveCount(0);
   expect(uploads.sessions.map((item) => item.department)).toEqual(['Finance', 'Finance']);
   expect(uploads.chunks).toEqual([4194304, 1048576, 5]);
   await expect(page.getByText(/40 MB|40 ميجابايت/)).toHaveCount(0);
@@ -491,7 +494,8 @@ test('directory picker recreates the directory tree below the selected destinati
   await expect(page.getByText('import-folder/first.txt')).toBeVisible();
   await expect(page.getByText('import-folder/second.txt')).toBeVisible();
   await page.locator('button[type="submit"]').click();
-  await expect(page.locator('p[role="status"]')).toContainText('2');
+  await expect(page.locator('[aria-live="polite"] [role="status"]')).toHaveText('تم رفع مستندين');
+  await expect(page.locator('form p[role="status"]')).toHaveCount(0);
   expect(uploads.sessions.map((item) => item.folder_id)).toEqual(['import-root', 'import-root']);
   expect(paths).toEqual([{ parent_id: 'folder-target', owner_id: null, parts: ['import-folder'] }, { parent_id: 'folder-target', owner_id: null, parts: ['import-folder'] }]);
 });
@@ -523,7 +527,7 @@ test('upload works on HTTP LAN installations without WebCrypto.subtle', async ({
   await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
   await page.locator('input[type="file"]').first().setInputFiles({ name: 'local.txt', mimeType: 'text/plain', buffer: Buffer.from('local') });
   await page.locator('button[type="submit"]').click();
-  await expect(page.locator('p[role="status"]')).toContainText('1');
+  await expect(page.locator('[aria-live="polite"] [role="status"]')).toHaveText('تم رفع المستند');
   expect(uploads.chunks).toEqual([5]);
 });
 
@@ -640,7 +644,8 @@ test('directory drop preserves nested paths and equal file names in different su
   await expect(page.getByText('المشروع/تقارير/same.txt')).toBeVisible();
   await expect(page.getByText('المشروع/عقود/same.txt')).toBeVisible();
   await page.locator('button[type="submit"]').click();
-  await expect(page.locator('p[role="status"]')).toContainText('2');
+  await expect(page.locator('[aria-live="polite"] [role="status"]')).toHaveText('تم رفع مستندين');
+  await expect(page.locator('form p[role="status"]')).toHaveCount(0);
   expect(paths.map(p => p.parts)).toEqual([['المشروع', 'تقارير'], ['المشروع', 'عقود'], ['المشروع', 'تقارير'], ['المشروع', 'عقود']]);
   expect(uploads.sessions.map(s => s.folder_id)).toEqual(['المشروع/تقارير', 'المشروع/عقود']);
 });
@@ -754,4 +759,72 @@ test('folder icon drop targets still move selected documents', async ({ page }) 
     node.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
   });
   await expect.poll(() => move).toEqual({ document_ids: ['doc-0'], folder_id: 'folder-0' });
+});
+
+for (const { code } of LANGUAGES) {
+  test(`localized upload menu, count-aware toast and simplified Gemini description (${code})`, async ({ page }) => {
+    await mockApi(page); const uploads = await uploadMock(page);
+    const t = getTranslations(code), account = { ...user, preferred_language: code };
+    await page.route('**/api/v1/auth/me', route => route.fulfill({ json: account }));
+    await page.addInitScript(account => {
+      localStorage.setItem('archive-pref-lang', account.preferred_language);
+      localStorage.setItem('archive-pref-lang-chosen', '1');
+      sessionStorage.setItem('archive-system-session', JSON.stringify({ token: 'test-token', user: account }));
+    }, account);
+    await page.goto('/');
+    await page.getByRole('button', { name: t.navUpload, exact: true }).click();
+    const trigger = page.locator('button[aria-haspopup="menu"]').filter({ hasText: t.uploadMenuLabel });
+    await expect(trigger).toHaveCount(1);
+    await expect(page.getByRole('button', { name: t.chooseFiles, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: t.chooseDirectory, exact: true })).toHaveCount(0);
+    await trigger.click();
+    await expect(page.getByRole('menuitem', { name: t.uploadFolderOption, exact: true })).toBeVisible();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: t.uploadFilesOption, exact: true }).click();
+    await (await chooser).setFiles({ name: 'single.txt', mimeType: 'text/plain', buffer: Buffer.from('text') });
+    await page.locator('button[type="submit"]').click();
+    const toasts = page.locator('[aria-live="polite"] [role="status"]');
+    await expect(toasts).toHaveText(uploadNotice(1, code));
+    await expect(toasts).not.toContainText(/بنجاح|successfully/i);
+    await expect(page.locator('form p[role="status"]')).toHaveCount(0);
+    await page.locator('[aria-live="polite"] button').click();
+    await page.locator('input[type=file]').first().setInputFiles(['a', 'b', 'c'].map(name => ({ name: name + '.txt', mimeType: 'text/plain', buffer: Buffer.from('text') })));
+    await page.locator('button[type="submit"]').click();
+    await expect(toasts).toHaveText(uploadNotice(3, code));
+    await expect(toasts).not.toContainText(/:|بنجاح|successfully/i);
+    expect(uploads.sessions).toHaveLength(4);
+    await page.getByRole('button', { name: t.navSettings, exact: true }).click();
+    await page.getByRole('button', { name: t.tabAdmin, exact: true }).click();
+    await page.getByRole('button', { name: t.adminGemini, exact: true }).click();
+    await expect(page.getByRole('heading', { name: t.geminiKeysTitle, exact: true })).toBeVisible();
+    await expect(page.getByText(t.geminiKeysDescription, { exact: true })).toBeVisible();
+    await expect(page.getByText(/00:00 UTC|العداد يحسب محاولات|Counts attempts from/)).toHaveCount(0);
+    await page.getByRole('button', { name: code === 'ar' ? 'ملفات الفريق' : 'Team files', exact: true }).click();
+    await expect(page.getByText(t.teamWorkspaceIntro, { exact: true })).toBeVisible();
+    await expect(page.getByText(/دون مشاركة بين الزملاء|No access to their other relationships/)).toHaveCount(0);
+  });
+}
+
+test('upload menu is keyboard accessible and closes on Escape or outside click', async ({ page }) => {
+  await mockApi(page); await loginFixture(page); await page.goto('/');
+  await page.getByRole('button', { name: 'رفع مستند', exact: true }).click();
+  const trigger = page.getByRole('button', { name: 'رفع', exact: true });
+  await trigger.focus(); await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'ملفات', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'مجلد', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused(); await expect(page.getByRole('menu')).toHaveCount(0);
+  await trigger.click(); await page.getByRole('heading', { name: 'رفع مستند جديد' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
+
+test('upload notifications use grammatical counts without success adverbs', () => {
+  expect(uploadNotice(1, 'ar')).toBe('تم رفع المستند');
+  expect(uploadNotice(2, 'ar')).toBe('تم رفع مستندين');
+  expect(uploadNotice(3, 'ar')).toBe('تم رفع 3 مستندات');
+  expect(uploadNotice(11, 'ar')).toBe('تم رفع 11 مستندًا');
+  expect(uploadNotice(100, 'ar')).toBe('تم رفع 100 مستند');
+  expect(cleanNotice('Saved successfully.')).toBe('Saved.');
+  expect(cleanNotice('تم الحفظ بنجاح.')).toBe('تم الحفظ.');
 });

@@ -1,3 +1,4 @@
+import { cleanNotice } from './workflowI18n';
 import type { LocaleCode } from '../components/types';
 import type { TranslationKeys } from './i18n';
 
@@ -324,11 +325,11 @@ export function localizeServerMessage(
   locale: LocaleCode,
   t?: TranslationKeys
 ): string {
-  const raw = (rawMessage || '').trim();
+  const raw = cleanNotice(rawMessage || '');
   const isAr = locale === 'ar';
 
   if (!raw) {
-    return ok ? (t?.savedSuccess || (isAr ? 'تم الحفظ بنجاح.' : 'Saved successfully.')) : (t?.errorGeneric || (isAr ? 'تعذر إتمام العملية.' : 'Could not complete the operation.'));
+    return ok ? (t?.savedSuccess || (isAr ? 'تم الحفظ.' : 'Saved.')) : (t?.errorGeneric || (isAr ? 'تعذر إتمام العملية.' : 'Could not complete the operation.'));
   }
 
   // If the server message already matches the active UI script, return it cleanly
@@ -343,5 +344,5 @@ export function localizeServerMessage(
   if (!ok) {
     return localizeApiError(raw, undefined, locale, t);
   }
-  return t?.savedSuccess || (isAr ? 'تمت العملية بنجاح.' : 'Operation completed successfully.');
+  return t?.savedSuccess || (isAr ? 'تمت العملية.' : 'Operation completed.');
 }

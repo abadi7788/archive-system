@@ -61,17 +61,14 @@ export default function GeminiKeyPanel({ token, locale }: { token: string; local
   }
   return <section className="space-y-4">
     <div className="card p-5 space-y-3">
-      <h3 className="text-lg font-bold">{ar ? 'مفاتيح Gemini ومتابعة الاستهلاك' : 'Gemini keys & usage'}</h3>
-      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{ar
-        ? 'تبدأ المعالجة بمفتاح الموظف، ثم تنتقل تلقائياً إلى مفاتيح النظام بالترتيب عند بلوغ الحد. تعاد محاولة فهرسة المستندات المنتظرة تلقائياً. لا تُعرض المفاتيح السرية بعد حفظها.'
-        : 'Processing tries the employee key first, then system keys in order when a limit is reached. Queued documents retry automatically. Saved secrets are never displayed.'}</p>
+      <h3 className="text-lg font-bold">{t.geminiKeysTitle}</h3>
+      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{t.geminiKeysDescription}</p>
       <form onSubmit={add} className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 items-end">
         <label className="text-sm font-semibold">{ar ? 'اسم المفتاح' : 'Key label'}<input required maxLength={120} className="field mt-1" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
         <label className="text-sm font-semibold">Gemini API Key<PasswordInput required minLength={20} maxLength={256} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="mt-1" autoComplete="off" dir="ltr" showLabel={t.showPassword} hideLabel={t.hidePassword} /></label>
         <label className="text-sm font-semibold">{ar ? 'الحد اليومي التقديري' : 'Estimated daily limit'}<input required type="number" min={1} max={1000000} dir="ltr" className="field mt-1" value={limit} onChange={(e) => setLimit(e.target.value)} /></label>
         <button disabled={busy} className="btn btn-primary">{busy ? t.saving : ar ? 'إضافة مفتاح' : 'Add key'}</button>
       </form>
-      <p className="text-xs text-slate-600 dark:text-slate-300">{ar ? 'العداد يحسب محاولات الطلب من هذه النسخة، بما فيها الاختبار والمحادثة والطلبات الفاشلة. يتجدد يومياً عند 00:00 UTC، ولا يشمل الاستهلاك خارج النظام. حدود Google قد تختلف، وقد تشترك المفاتيح في حصة مشروع واحد. حالة «وصل للحد» تشمل رفض الحصة من المزود؛ المتبقي تقديري وليس رصيداً مضموناً.' : 'Counts attempts from this installation, including tests, chat, and failures. Resets daily at 00:00 UTC. External usage is not included; provider limits may differ and keys may share a project quota. Limited also includes provider quota rejection; remaining usage is an estimate.'}</p>
       {notice && <p role="status" className="text-sm font-semibold text-brand-700 dark:text-brand-300">{notice}</p>}
     </div>
     <div className="grid gap-3">

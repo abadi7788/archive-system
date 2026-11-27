@@ -1,5 +1,6 @@
 'use client';
 import React, { FormEvent, useMemo, useRef, useState } from 'react';
+import UploadSourceMenu from './UploadSourceMenu';
 import { AppIcon } from '../BrandMark';
 import type { TranslationKeys } from '../lib/i18n';
 import { droppedFiles, relativeUploadPath, importDirectoryPaths, isAllowedUploadFile, UPLOAD_ACCEPT } from '../lib/uploads';
@@ -10,7 +11,7 @@ export default function UploadView({ user, folders, departments, categories, def
   user: User; folders: FolderItem[]; departments: string[]; categories: string[]; defaultFolderId: string; t: TranslationKeys;
   onUpload: (payload: Payload, onProgress: (percent: number) => void) => Promise<DocItem>;
   onCreateDirectories: (paths: string[][], folderId: string) => Promise<void>;
-  onGoArchive: (folderId?: string) => void; onFinished: () => Promise<void>;
+  onGoArchive: (folderId?: string) => void; onFinished: (count: number) => Promise<void>;
 }) {
   const [directories, setDirectories] = useState<string[][]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -22,8 +23,6 @@ export default function UploadView({ user, folders, departments, categories, def
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState(0);
-  const [directoriesDone, setDirectoriesDone] = useState(false);
   const [tasks, setTasks] = useState<Record<string, { progress: number; error?: string; done?: boolean }>>({});
   const fileInput = useRef<HTMLInputElement>(null);
   const directoryInput = useRef<HTMLInputElement>(null);
@@ -37,7 +36,6 @@ export default function UploadView({ user, folders, departments, categories, def
     if (paths.length) setDirectories(previous => Array.from(new Map([...previous, ...paths].map(path => [path.join('/'), path])).values()));
     const valid = candidates.filter(isAllowedUploadFile);
     setError(valid.length !== candidates.length ? t.unsupportedFiles : '');
-    setDone(0); setDirectoriesDone(false);
     setFiles((previous) => Array.from(new Map([...previous, ...valid].map((file) => [fileKey(file), file])).values()));
   }
   async function handleSubmit(event: FormEvent) {
@@ -62,8 +60,7 @@ export default function UploadView({ user, folders, departments, categories, def
         setTasks((previous) => ({ ...previous, [key]: { progress: 0, error: failure.message || t.errorGeneric } }));
       }
     }
-    setDone(completed); setDirectoriesDone(directories.length > 0);
-    if (completed || directories.length) await onFinished().catch(() => {});
+    if (completed || directories.length) await onFinished(completed).catch(() => {});
     setFiles(failed); // Retrying failures never uploads successful files a second time.
     setBusy(false);
   }
@@ -81,9 +78,8 @@ export default function UploadView({ user, folders, departments, categories, def
           <AppIcon name="upload" size={28} className="mx-auto mb-3 text-brand-600 dark:text-brand-300" />
           <p className="font-bold">{t.dropzoneTitle}</p>
           <p className="text-xs text-slate-600 dark:text-slate-300 mt-2" dir="ltr">{t.dropzoneHint}</p>
-          <div className="flex flex-wrap justify-center gap-3 mt-5">
-            <button type="button" onClick={() => fileInput.current?.click()} className="btn btn-primary text-xs">{t.chooseFiles}</button>
-            <button type="button" onClick={() => directoryInput.current?.click()} className="btn btn-secondary text-xs"><AppIcon name="folder" size={16} />{t.chooseDirectory}</button>
+          <div className="flex justify-center mt-5">
+            <UploadSourceMenu t={t} onFiles={() => fileInput.current?.click()} onFolder={() => directoryInput.current?.click()} />
           </div>
           <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} multiple className="hidden" aria-label={t.chooseFiles}
             onChange={(event) => { addFiles(Array.from(event.target.files || [])); event.target.value = ''; }} />
@@ -214,8 +210,6 @@ export default function UploadView({ user, folders, departments, categories, def
             <button type="button" className="btn btn-secondary p-2" aria-label={`${t.removeFile}: ${file.name}`} onClick={() => setFiles((prev) => prev.filter((item) => item !== file))}><AppIcon name="x" size={15} /></button>
           </li>; })}
         </ul>}
-        {directoriesDone && done === 0 && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t.savedSuccess}</p>}
-        {done > 0 && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{t.uploadSuccess}: {done}</p>}
         <button type="submit" disabled={busy || (!files.length && !directories.length)} className="btn btn-primary w-full sm:w-auto"><AppIcon name="upload" size={17} />{busy ? t.uploadingProgress : t.uploadSubmit}{files.length ? ` (${files.length})` : ''}</button>
       </fieldset>
     </form>

@@ -145,7 +145,7 @@ class GeminiOCRService:
                 ),
                 timeout=15.0,
             )
-            return True, "تم التحقق من الاتصال بنجاح والمفتاح يعمل بشكل سليم."
+            return True, "تم التحقق من الاتصال والمفتاح يعمل بشكل سليم."
         except Exception as exc:
             if _is_quota_error(exc):
                 await mark_exhausted(cleaned)

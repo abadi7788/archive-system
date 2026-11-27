@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     system_gemini_key_3: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 90.0
+    ocr_retry_interval_seconds: int = Field(default=120, ge=5, le=3600)
+    ocr_retry_batch_size: int = Field(default=20, ge=1, le=200)
 
     master_encryption_key: SecretStr
     master_admin_password: SecretStr

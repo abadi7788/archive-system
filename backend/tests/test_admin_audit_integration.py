@@ -211,3 +211,49 @@ class AdminAuditIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 422)
         self.assertNotIn(secret, response.text)
         self.assertNotIn('input', response.json()['detail'][0])
+
+    async def test_automatic_retry_recovers_queued_and_abandoned_processing_jobs(self):
+        from app.models.document import Document
+        from app.services.ocr_retry import retry_pending_batch
+        from app.core.config import settings
+        from app.services.gemini_service import AllGeminiKeysExhausted, GeminiRequestFailed
+        from app.api.documents import run_ocr_background
+        for initial_status in ['queued', 'processing']:
+            async with self.Session() as db:
+                doc = Document(user_id=self.admin.id, file_name='Retry.png', file_path=f'retry/{self.prefix}/{initial_status}',
+                               mime_type='image/png', file_size=10, processing_status=initial_status)
+                db.add(doc)
+                await db.commit()
+            cursor_before = uuid.UUID(int=doc.id.int - 1)
+            provider = AsyncMock(side_effect=[AllGeminiKeysExhausted([]), GeminiRequestFailed('Temporary provider outage'), {'extracted_text': 'Automatically indexed'}])
+            with patch.object(settings, 'ocr_retry_batch_size', 1), patch('app.api.documents.GeminiOCRService.extract', provider), patch('app.api.documents.get_storage', return_value=SimpleNamespace(get=AsyncMock(return_value=b'image'))):
+                for expected in ['queued', 'queued', 'completed']:
+                    cursor, acquired = await retry_pending_batch(cursor_before)
+                    self.assertTrue(acquired)
+                    self.assertEqual(cursor, doc.id)
+                    async with self.Session() as db:
+                        self.assertEqual((await db.get(Document, doc.id)).processing_status, expected)
+                # A completed job is not indexed twice, even when an upload task races the worker.
+                await run_ocr_background(doc.id, doc.file_path, doc.mime_type)
+                self.assertEqual(provider.await_count, 3)
+            async with self.Session() as db:
+                saved = await db.get(Document, doc.id)
+                self.assertEqual(saved.extracted_text, 'Automatically indexed')
+                self.assertIsNone(saved.processing_error)
+
+    async def test_gemini_key_changes_wake_automatic_indexing_after_commit(self):
+        from app.models.system_api_key import SystemAPIKey
+        async def confirm_committed():
+            async with self.Session() as db:
+                from sqlalchemy import select
+                self.assertIsNotNone(await db.scalar(select(SystemAPIKey).where(SystemAPIKey.label == 'Wake ' + self.prefix)))
+        # A synchronous notifier can only run after the request has committed.
+        with patch('app.api.admin.request_ocr_retry') as wake:
+            response = await self.client.post('/api/v1/admin/gemini-keys', headers=self.headers,
+                                             json={'label': 'Wake ' + self.prefix, 'api_key': 'AIzaTestWakeKey_' + self.prefix, 'daily_limit': 20})
+            self.assertEqual(response.status_code, 201, response.text)
+            wake.assert_called_once()
+            await confirm_committed()
+            response = await self.client.patch('/api/v1/admin/gemini-keys/' + response.json()['id'], headers=self.headers, json={'daily_limit': 40})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(wake.call_count, 2)

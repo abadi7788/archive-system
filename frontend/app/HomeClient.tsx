@@ -2,6 +2,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BrandMark, { AppIcon } from './BrandMark';
 import DocumentModal from './DocumentModal';
+import { cleanNotice, uploadNotice } from './lib/workflowI18n';
 import { isAllowedUploadFile, uploadInChunks, droppedFiles, importDirectoryPaths, createImportDirectories } from './lib/uploads';
 import ArchiveView, { DRAG_DOC_IDS_MIME } from './components/ArchiveView';
 import EditDocumentModal from './components/EditDocumentModal';
@@ -175,6 +176,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
   const canPrint = Boolean(user && (user.role === 'admin' || user.can_print));
 
   const pushToast = useCallback((type: ToastItem['type'], text: string) => {
+    text = cleanNotice(text);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setToasts((prev) => [...prev.slice(-3), { id, type, text }]);
     window.setTimeout(() => {
@@ -477,6 +479,13 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
     },
     [apiFetch, archiveScope, selectedFolder, query, filters]
   );
+
+  const hasPendingDocuments = docs.some(doc => doc.status === 'queued' || doc.status === 'processing');
+  useEffect(() => {
+    if (!token || section !== 'archive' || !hasPendingDocuments) return;
+    const timer = window.setInterval(() => { if (!document.hidden) void loadDocuments(); }, 10000);
+    return () => window.clearInterval(timer);
+  }, [token, section, hasPendingDocuments, loadDocuments]);
 
   const loadAdminData = useCallback(
     async (overrideToken?: string, overrideStepUp?: string) => {
@@ -1091,7 +1100,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
 
     if (successCount > 0) {
       await Promise.all([loadFolders(), loadDocuments()]);
-      pushToast('ok', t.uploadSuccess);
+      pushToast('ok', uploadNotice(successCount, locale));
     } else if (errorCount > 0) {
       pushToast('err', t.errorGeneric);
     }
@@ -2036,7 +2045,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
             />
           )}
 
-          {section === 'team' && <TeamView token={token} user={user} locale={locale} t={t} onPersonalChanged={async () => { await Promise.all([loadFolders(), loadDocuments()]); }} />}
+          {section === 'team' && <TeamView token={token} user={user} locale={locale} t={t} onNotify={(message) => pushToast('ok', message)} onPersonalChanged={async () => { await Promise.all([loadFolders(), loadDocuments()]); }} />}
 
           {section === 'upload' && (
             <UploadView
@@ -2048,7 +2057,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
               t={t}
               onCreateDirectories={async (paths, folderId) => { try { await createImportDirectories(paths, token, folderId); } catch (e: any) { throw new Error(localizeApiError(e.message, e.status || 0, locale, t)); } }}
               onUpload={handleUploadDocument}
-              onFinished={async () => { await Promise.all([loadFolders(), loadDocuments()]); pushToast('ok', t.uploadSuccess); }}
+              onFinished={async (count) => { await Promise.all([loadFolders(), loadDocuments()]); pushToast('ok', count ? uploadNotice(count, locale) : t.savedSuccess); }}
               onGoArchive={(folderId) => {
                 setArchiveScope('all');
                 if (folderId !== undefined) {
