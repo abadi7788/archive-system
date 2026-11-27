@@ -25,12 +25,15 @@ jobs:
         with:
           path: release-source
           persist-credentials: false
+      # Apply the execution policy before Actions loads its temporary .ps1.
+      # Process-local only; do not change the runner's persistent machine policy.
       - name: Test deployment failure handling
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
         run: |
+          $ErrorActionPreference = 'Stop'
           & "$env:GITHUB_WORKSPACE\release-source\.github\scripts\Test-Deploy-Archive.ps1"
       - name: Deploy exact release and verify running versions
-        shell: powershell
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
         env:
           GIT_TERMINAL_PROMPT: "0"
           GCM_INTERACTIVE: "never"
@@ -38,4 +41,5 @@ jobs:
           EXPECTED_REVISION: ${{ github.sha }}
           ARCHIVE_PUBLIC_URL: ${{ vars.ARCHIVE_PUBLIC_URL }}
         run: |
+          $ErrorActionPreference = 'Stop'
           & "$env:GITHUB_WORKSPACE\release-source\.github\scripts\Deploy-Archive.ps1" -ExpectedRevision $env:EXPECTED_REVISION -PublicUrl $env:ARCHIVE_PUBLIC_URL
