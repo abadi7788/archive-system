@@ -828,3 +828,10 @@ test('upload notifications use grammatical counts without success adverbs', () =
   expect(cleanNotice('Saved successfully.')).toBe('Saved.');
   expect(cleanNotice('تم الحفظ بنجاح.')).toBe('تم الحفظ.');
 });
+
+test('running frontend revision endpoint is uncached and not a proxied API request', async ({ request }) => {
+  const response = await request.get('/build-info');
+  expect(response.status()).toBe(200);
+  expect(response.headers()['cache-control']).toContain('no-store');
+  expect(await response.json()).toEqual({ revision: process.env.APP_REVISION || 'development' });
+});

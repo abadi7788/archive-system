@@ -6,17 +6,36 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Do not interrupt a running deployment halfway through container replacement.
+concurrency:
+  group: archive-production-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: self-hosted
+    timeout-minutes: 30
     steps:
-      - name: Pull latest code and rebuild Docker
-        shell: cmd
+      - name: Check out deployment tooling
+        uses: actions/checkout@v4
+        with:
+          path: release-source
+          persist-credentials: false
+      - name: Test deployment failure handling
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\release-source\.github\scripts\Test-Deploy-Archive.ps1"
+      - name: Deploy exact release and verify running versions
+        shell: powershell
         env:
           GIT_TERMINAL_PROMPT: "0"
           GCM_INTERACTIVE: "never"
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REVISION: ${{ github.sha }}
+          ARCHIVE_PUBLIC_URL: ${{ vars.ARCHIVE_PUBLIC_URL }}
         run: |
-          cd /d D:\archive-system
-          git config --global --add safe.directory D:/archive-system
-          git -c credential.helper= pull https://x-access-token:${{ github.token }}@github.com/abadi7788/archive-system.git main
-          docker compose up -d --build
+          & "$env:GITHUB_WORKSPACE\release-source\.github\scripts\Deploy-Archive.ps1" -ExpectedRevision $env:EXPECTED_REVISION -PublicUrl $env:ARCHIVE_PUBLIC_URL

@@ -45,7 +45,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Never cache API calls, auth endpoints, or sensitive document payloads.
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith('/api/') || url.pathname === '/build-info') {
     return;
   }
 

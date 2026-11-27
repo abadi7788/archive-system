@@ -257,3 +257,12 @@ class AdminAuditIntegrationTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.patch('/api/v1/admin/gemini-keys/' + response.json()['id'], headers=self.headers, json={'daily_limit': 40})
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(wake.call_count, 2)
+
+    async def test_health_reports_running_revision_without_cache(self):
+        from app.core.config import settings
+        with patch.object(settings, 'app_revision', 'a' * 40):
+            for path in ['/health', '/api/v1/health']:
+                response = await self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {'status': 'ok', 'revision': 'a' * 40})
+                self.assertIn('no-store', response.headers['cache-control'])

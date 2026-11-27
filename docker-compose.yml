@@ -16,7 +16,10 @@ services:
     networks: [archive]
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        SOURCE_REVISION: ${SOURCE_REVISION:-development}
     restart: unless-stopped
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
@@ -56,7 +59,10 @@ services:
     networks: [archive]
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        SOURCE_REVISION: ${SOURCE_REVISION:-development}
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
@@ -64,6 +70,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/build-info').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     networks: [archive]
 
   caddy:
