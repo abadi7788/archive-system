@@ -266,3 +266,138 @@ class AdminAuditIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), {'status': 'ok', 'revision': 'a' * 40})
                 self.assertIn('no-store', response.headers['cache-control'])
+
+    async def test_temporary_rate_limit_expires_without_waiting_for_utc_midnight(self):
+        from app.services.gemini_usage import mark_exhausted, reserve_request, locked_usage, usage_snapshot
+        value = 'cooldown-' + self.prefix
+        await mark_exhausted(value, 30)
+        self.assertFalse(await reserve_request(value))
+        async with self.Session() as db:
+            state = await usage_snapshot(db, value)
+            self.assertEqual(state['reason'], 'rate_limited')
+            self.assertIsNotNone(state['retry_at'])
+            row = await locked_usage(db, value)
+            self.assertFalse(row.quota_exhausted, 'Minute limits must not become day-long bans')
+            row.retry_after = datetime.now(timezone.utc) - timedelta(seconds=1)
+            await db.commit()
+        self.assertTrue(await reserve_request(value))
+        await mark_exhausted(value, daily=True)
+        self.assertFalse(await reserve_request(value))
+        async with self.Session() as db:
+            self.assertEqual((await usage_snapshot(db, value))['reason'], 'provider_daily_limit')
+
+    async def test_stored_key_probe_masks_errors_respects_budget_and_wakes_jobs(self):
+        from app.services.gemini_usage import usage_snapshot
+        secret = 'AIzaProbe_' + self.prefix
+        created = await self.client.post('/api/v1/admin/gemini-keys', headers=self.headers, json={'label': self.prefix, 'api_key': secret, 'daily_limit': 2})
+        path = '/api/v1/admin/gemini-keys/' + created.json()['id'] + '/test'
+        self.assertEqual((await self.client.post(path, headers=self.viewer_headers)).status_code, 403)
+        failure = RuntimeError('API_KEY_INVALID with private credential ' + secret)
+        failure.code = 400
+        provider = AsyncMock(side_effect=[failure, SimpleNamespace(text='OK')])
+        client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=provider), aclose=AsyncMock()))
+        with patch('app.services.gemini_service.genai.Client', return_value=client), patch('app.api.admin.request_ocr_retry') as wake:
+            result = await self.client.post(path, headers=self.headers)
+            self.assertEqual(result.json()['code'], 'invalid_key')
+            self.assertNotIn(secret, result.text)
+            self.assertNotIn('private credential', result.text)
+            wake.assert_not_called()
+            result = await self.client.post(path, headers=self.headers)
+            self.assertTrue(result.json()['ok'])
+            wake.assert_called_once()
+            result = await self.client.post(path, headers=self.headers)
+            self.assertEqual(result.json()['code'], 'daily_limit')
+            self.assertEqual(provider.await_count, 2)
+        async with self.Session() as db:
+            state = await usage_snapshot(db, secret)
+            self.assertEqual(state['requests_today'], 2)
+            self.assertEqual(state['reason'], 'daily_limit')
+
+    async def test_system_primary_order_is_saved_without_exposing_keys(self):
+        from app.models.system_api_key import SystemAPIKey
+        from sqlalchemy import select
+        ids = []
+        for name in ['first', 'second']:
+            response = await self.client.post('/api/v1/admin/gemini-keys', headers=self.headers,
+                json={'label': name + self.prefix, 'api_key': name + '-primary-' + self.prefix})
+            self.assertEqual(response.status_code, 201, response.text)
+            ids.append(response.json()['id'])
+        result = await self.client.patch('/api/v1/admin/gemini-keys/' + ids[1], headers=self.headers, json={'make_primary': True})
+        self.assertEqual(result.status_code, 200, result.text)
+        async with self.Session() as db:
+            first = await db.scalar(select(SystemAPIKey).order_by(SystemAPIKey.priority))
+            self.assertEqual(str(first.id), ids[1])
+        result = await self.client.get('/api/v1/admin/gemini-keys', headers=self.headers)
+        self.assertEqual(result.json()[0]['id'], ids[1])
+        self.assertNotIn('second-primary-' + self.prefix, result.text)
+
+    async def test_image_and_pdf_uploads_are_automatically_indexed_with_gemini(self):
+        import base64, io, json
+        from reportlab.pdfgen import canvas
+        from app.models.document import Document
+        payload = io.BytesIO()
+        pdf = canvas.Canvas(payload); pdf.drawString(20, 100, 'PDF OCR test'); pdf.save()
+        from app.services.gemini_service import PROBE_IMAGE
+        png = PROBE_IMAGE
+        provider = AsyncMock(return_value=SimpleNamespace(text=json.dumps({'extracted_text': 'Verified OCR ' + self.prefix})))
+        client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=provider), aclose=AsyncMock()))
+        key = 'OCR-provider-' + self.prefix
+        with patch('app.services.gemini_service.load_active_db_gemini_keys', AsyncMock(return_value=[('primary', key)])), patch('app.services.gemini_service.genai.Client', return_value=client):
+            for index, (name, mime, content) in enumerate([('image.png', 'image/png', png), ('document.pdf', 'application/pdf', payload.getvalue())]):
+                if index == 0:
+                    response = await self.client.post('/api/v1/documents/upload', headers=self.headers, files={'file': (self.prefix + name, content, mime)})
+                    self.assertEqual(response.status_code, 201, response.text)
+                else:
+                    session = await self.client.post('/api/v1/uploads', headers=self.headers, json={'file_name': self.prefix + name, 'file_size': len(content)})
+                    uid = session.json()['id']
+                    await self.client.put(f'/api/v1/uploads/{uid}?offset=0', headers=self.headers, content=content)
+                    response = await self.client.post(f'/api/v1/uploads/{uid}/complete', headers=self.headers)
+                    self.assertEqual(response.status_code, 200, response.text)
+                async with self.Session() as db:
+                    saved = await db.get(Document, uuid.UUID(response.json()['id']))
+                    self.assertEqual(saved.processing_status, 'completed')
+                    self.assertEqual(saved.extracted_text, 'Verified OCR ' + self.prefix)
+                    self.assertIsNone(saved.processing_error)
+        self.assertEqual(provider.await_count, 2)
+
+    async def test_indexing_reasons_and_counts_are_safe_and_admin_only(self):
+        from app.models.document import Document
+        secret = 'provider-raw-secret-' + self.prefix
+        async with self.Session() as db:
+            for reason in ['missing_key', 'rate_limited', 'invalid_key', secret]:
+                db.add(Document(user_id=self.admin.id, file_name=reason[:15] + self.prefix + '.png',
+                    file_path=self.prefix + '/' + reason, mime_type='image/png', file_size=5, processing_status='queued', processing_error=reason))
+            await db.commit()
+        result = await self.client.get('/api/v1/admin/gemini-status', headers=self.headers)
+        self.assertEqual(result.status_code, 200)
+        self.assertGreaterEqual(result.json()['reasons']['missing_key'], 1)
+        self.assertNotIn(secret, result.text)
+        self.assertEqual((await self.client.get('/api/v1/admin/gemini-status', headers=self.viewer_headers)).status_code, 403)
+        search = await self.client.get('/api/v1/search', headers=self.headers, params={'q': self.prefix})
+        self.assertNotIn(secret, search.text)
+        self.assertIn('"indexing_reason":"missing_key"', search.text)
+
+    async def test_startup_recovers_legacy_all_day_flags_without_resetting_new_daily_limits(self):
+        from app.services.gemini_usage import locked_usage
+        from app.main import app
+        legacy_key, daily_key = 'legacy-' + self.prefix, 'daily-' + self.prefix
+        async with self.Session() as db:
+            legacy = await locked_usage(db, legacy_key)
+            legacy.quota_exhausted = True
+            legacy.last_error_code = None
+            daily = await locked_usage(db, daily_key)
+            daily.quota_exhausted = True
+            daily.last_error_code = 'provider_daily_limit'
+            await db.commit()
+        # No real retry/provider activity during the startup/migration check.
+        with patch('app.services.ocr_retry.retry_queued_documents', AsyncMock()):
+            for _ in range(2):
+                async with app.router.lifespan_context(app):
+                    async with self.Session() as db:
+                        legacy = await locked_usage(db, legacy_key)
+                        daily = await locked_usage(db, daily_key)
+                        self.assertFalse(legacy.quota_exhausted)
+                        self.assertEqual(legacy.last_error_code, 'rate_limited')
+                        self.assertIsNotNone(legacy.retry_after)
+                        self.assertTrue(daily.quota_exhausted)
+                        self.assertEqual(daily.last_error_code, 'provider_daily_limit')

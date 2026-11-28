@@ -16,6 +16,7 @@ from app.api.access import (
 )
 from app.api.deps import current_user
 from app.api.documents import build_folder_breadcrumbs, format_document_path
+from app.services.indexing_status import indexing_reason
 from app.db import get_db
 from app.models.document import Document
 from app.models.taxonomy import DocumentStar
@@ -152,6 +153,7 @@ async def search_documents(
                     "summary": d.summary,
                     "snippet": snippet,
                     "status": d.processing_status,
+                    "indexing_reason": indexing_reason(d.processing_status, d.processing_error),
                     "classification": d.classification,
                     "department": d.department,
                     "keywords": d.keywords,
@@ -186,6 +188,7 @@ async def search_documents(
                 "summary": d.summary,
                 "snippet": (d.extracted_text or "")[:320],
                 "status": d.processing_status,
+                    "indexing_reason": indexing_reason(d.processing_status, d.processing_error),
                 "classification": d.classification,
                 "department": d.department,
                 "keywords": d.keywords,

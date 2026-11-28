@@ -173,12 +173,12 @@ async def _run_ocr_background(
             doc.department = doc.department or out.get("metadata", {}).get("department")
             doc.processing_status = "completed"
             doc.processing_error = None
-        except AllGeminiKeysExhausted:
+        except AllGeminiKeysExhausted as exc:
             doc.processing_status = "queued"
-            doc.processing_error = "Extraction keys currently rate limited; awaiting retry"
-        except GeminiRequestFailed:
+            doc.processing_error = exc.reason
+        except GeminiRequestFailed as exc:
             doc.processing_status = "queued"
-            doc.processing_error = "Text extraction provider is unavailable; awaiting retry"
+            doc.processing_error = exc.reason
         except Exception as exc:
             logger.warning("Background extraction failed for document %s (%s)", document_id, type(exc).__name__)
             doc.processing_status = "failed"

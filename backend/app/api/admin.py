@@ -458,6 +458,7 @@ class PoolKeyUpdate(BaseModel):
     is_active: bool | None = None
     daily_limit: int | None = Field(default=None, ge=1, le=1000000)
     label: str | None = Field(default=None, min_length=1, max_length=120)
+    make_primary: bool = False
 
 
 @router.get('/gemini-keys')
@@ -470,16 +471,19 @@ async def list_gemini_keys(actor: Annotated[User, Depends(admin_user)], db: Anno
             value = decrypt_secret(row.key_encrypted)
             stats = await usage_snapshot(db, value)
         except ValueError:
-            stats = {"status": "disabled", "requests_today": 0, "daily_limit": 1500, "remaining_estimate": 0}
+            stats = {"status": "disabled", "reason": "unreadable_key", "requests_today": 0, "daily_limit": 1500, "remaining_estimate": 0}
             value = ''
         result.append({"id": str(row.id), "label": row.label, "kind": "system", "is_active": row.is_active,
-                       "masked_key": _mask_key(value), **stats,
+                       "masked_key": _mask_key(value), "priority": row.priority, **stats,
                        "status": stats['status'] if row.is_active else 'disabled'})
     users = (await db.scalars(select(User).where(User.gemini_key_encrypted.is_not(None)))).all()
     for user in users:
         try:
             value = decrypt_secret(user.gemini_key_encrypted)
         except ValueError:
+            result.append({"id": str(user.id), "label": user.full_name or user.username, "kind": "user",
+                           "is_active": user.is_active, "masked_key": "••••••••", "status": "disabled", "reason": "unreadable_key",
+                           "requests_today": 0, "daily_limit": 1500, "remaining_estimate": 0})
             continue
         stats = await usage_snapshot(db, value)
         result.append({"id": str(user.id), "label": user.full_name or user.username, "kind": "user",
@@ -533,6 +537,8 @@ async def create_gemini_key(payload: PoolKeyCreate, actor: Annotated[User, Depen
 async def update_gemini_key(key_id: str, payload: PoolKeyUpdate, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)], kind: str = 'system'):
     import uuid
     from app.services.gemini_usage import locked_usage
+    if payload.make_primary and kind != 'system':
+        raise HTTPException(422, 'Only system keys can be reordered')
     if kind == 'environment':
         from app.services.gemini_usage import fingerprint
         value = next((key for key in settings.system_gemini_keys if fingerprint(key) == key_id), None)
@@ -565,6 +571,10 @@ async def update_gemini_key(key_id: str, payload: PoolKeyUpdate, actor: Annotate
     if payload.daily_limit is not None:
         usage.daily_limit = payload.daily_limit
     if kind == 'system':
+        if payload.make_primary:
+            from sqlalchemy import text
+            await db.execute(text('SELECT pg_advisory_xact_lock(726194)'))
+            row.priority = int(await db.scalar(select(func.min(SystemAPIKey.priority))) or 0) - 1
         if payload.is_active is not None:
             row.is_active = payload.is_active
             if payload.is_active:
@@ -593,3 +603,43 @@ async def delete_gemini_key(key_id: str, actor: Annotated[User, Depends(admin_us
     await db.delete(row)
     await db.commit()
     return {"ok": True}
+
+
+@router.get('/gemini-status')
+async def gemini_status(_: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)]):
+    from app.services.indexing_status import indexing_reason
+    counts = {'queued': 0, 'processing': 0, 'failed': 0}
+    reasons = {}
+    rows = (await db.execute(select(Document.processing_status, Document.processing_error, func.count(Document.id))
+        .where(Document.deleted_at.is_(None), Document.processing_status.in_(counts))
+        .group_by(Document.processing_status, Document.processing_error))).all()
+    for status, error, count in rows:
+        counts[status] += count
+        reason = indexing_reason(status, error)
+        if reason: reasons[reason] = reasons.get(reason, 0) + count
+    return {'model': settings.gemini_model, **counts, 'reasons': reasons}
+
+
+@router.post('/gemini-keys/{key_id}/test')
+async def test_pool_key(key_id: str, actor: Annotated[User, Depends(admin_user)], db: Annotated[AsyncSession, Depends(get_db)], kind: str = 'system'):
+    import uuid
+    from app.services.gemini_usage import fingerprint
+    if kind == 'environment':
+        value = next((key for key in settings.system_gemini_keys if fingerprint(key) == key_id), None)
+        if not value: raise HTTPException(404, 'Key not found')
+    elif kind in {'system', 'user'}:
+        try: uid = uuid.UUID(key_id)
+        except ValueError: raise HTTPException(422, 'Invalid key id')
+        row = await db.get(SystemAPIKey if kind == 'system' else User, uid)
+        encrypted = (row.key_encrypted if kind == 'system' else row.gemini_key_encrypted) if row else None
+        if not encrypted: raise HTTPException(404, 'Key not found')
+        try: value = decrypt_secret(encrypted)
+        except ValueError: return {'ok': False, 'code': 'unreadable_key', 'model': settings.gemini_model}
+    else:
+        raise HTTPException(422, 'Invalid key kind')
+    result = await GeminiOCRService().check_key(value)
+    db.add(AuditLog(actor_id=actor.id, action='gemini_key.tested', resource_type=kind + '_api_key',
+                    detail={'result': result['code']}))
+    await db.commit()
+    if result['ok']: request_ocr_retry()
+    return result

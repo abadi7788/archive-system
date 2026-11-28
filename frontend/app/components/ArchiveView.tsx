@@ -1,5 +1,7 @@
 'use client';
 import FolderTile from './FolderTile';
+import { indexingMessage } from '../lib/geminiI18n';
+import type { LocaleCode } from './types';
 import FileThumbnail from './FileThumbnail';
 import DateField from './DateField';
 import RenameDialog from './RenameDialog';
@@ -29,6 +31,7 @@ type QuickTypeFilter = 'all' | 'pdf' | 'image';
 const VIEW_MODE_STORAGE_KEY = 'archive_yemany_view_mode';
 
 export default function ArchiveView({
+  locale,
   user,
   token,
   canPrint,
@@ -65,6 +68,7 @@ export default function ArchiveView({
   onRename,
   onSaveDisplaySize,
 }: {
+  locale: LocaleCode;
   user: User;
   token: string;
   canPrint: boolean;
@@ -1350,10 +1354,11 @@ export default function ArchiveView({
                                   )}
                                   <span className={`inline-flex items-center gap-1 ${statusMeta.textClass}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
-                                    <span>{statusMeta.label}</span>
+                                    <span title={doc.indexing_reason ? indexingMessage(doc.indexing_reason, locale) : undefined}>{statusMeta.label}</span>
                                   </span>
                                 </div>
 
+                                {doc.indexing_reason && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{indexingMessage(doc.indexing_reason, locale)}</p>}
                                 {snippetText && (
                                   <p
                                     className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2"
@@ -1617,11 +1622,12 @@ export default function ArchiveView({
                               )}
                             </div>
 
+                            {doc.indexing_reason && <p className="mt-2 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300 line-clamp-2" title={indexingMessage(doc.indexing_reason, locale)}>{indexingMessage(doc.indexing_reason, locale)}</p>}
                             {/* Card Footer */}
                             <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
                               <span className={`inline-flex items-center gap-1 font-semibold ${statusMeta.textClass}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
-                                <span>{statusMeta.label}</span>
+                                <span title={doc.indexing_reason ? indexingMessage(doc.indexing_reason, locale) : undefined}>{statusMeta.label}</span>
                               </span>
                               <span dir="ltr" className="tabular-nums">
                                 {formatBytes(doc.file_size)} · {formatDateISO(doc.created_at)}

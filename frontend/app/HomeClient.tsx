@@ -2000,6 +2000,7 @@ export default function HomeClient({ initialLocale }: { initialLocale?: LocaleCo
         <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 ${section === 'archive' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
           {section === 'archive' && (
             <ArchiveView
+              locale={locale}
               user={user}
               token={token}
               canPrint={canPrint}
