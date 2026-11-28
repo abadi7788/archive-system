@@ -17,6 +17,12 @@ async def lifespan(_: FastAPI):
     from app.core.security import hash_password
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE gemini_usage ADD COLUMN IF NOT EXISTS retry_after TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE gemini_usage ADD COLUMN IF NOT EXISTS last_error_code VARCHAR(48)"))
+        await conn.execute(text("ALTER TABLE gemini_usage ADD COLUMN IF NOT EXISTS checked_at TIMESTAMPTZ"))
+        # Old releases treated any 429 as an all-day ban. Recover those flags once;
+        # genuine daily-provider bans created by this release carry a reason code.
+        await conn.execute(text("UPDATE gemini_usage SET quota_exhausted = FALSE, retry_after = NOW() + INTERVAL '60 seconds', last_error_code = 'rate_limited' WHERE quota_exhausted = TRUE AND last_error_code IS NULL"))
         # Ensure new columns exist on pre-existing deployments without manual intervention.
         await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT"))
         await conn.execute(text("ALTER TABLE documents ALTER COLUMN file_size TYPE BIGINT"))

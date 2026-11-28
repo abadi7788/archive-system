@@ -1,4 +1,5 @@
 import { getTranslations, LANGUAGES } from '../app/lib/i18n';
+import { GEMINI_TEXT, indexingMessage } from '../app/lib/geminiI18n';
 import { cleanNotice, uploadNotice } from '../app/lib/workflowI18n';
 import { test, expect, type Page } from '@playwright/test';
 
@@ -834,4 +835,91 @@ test('running frontend revision endpoint is uncached and not a proxied API reque
   expect(response.status()).toBe(200);
   expect(response.headers()['cache-control']).toContain('no-store');
   expect(await response.json()).toEqual({ revision: process.env.APP_REVISION || 'development' });
+});
+
+for (const { code } of LANGUAGES) {
+  test(`Gemini keys explain image/PDF processing, test stored keys and persist primary order (${code})`, async ({ page }) => {
+    await mockApi(page);
+    const t = getTranslations(code), c = GEMINI_TEXT[code], account = { ...user, preferred_language: code };
+    await page.route('**/api/v1/auth/me', route => route.fulfill({ json: account }));
+    await page.addInitScript(account => {
+      localStorage.setItem('archive-pref-lang', account.preferred_language);
+      localStorage.setItem('archive-pref-lang-chosen', '1');
+      sessionStorage.setItem('archive-system-session', JSON.stringify({ token: 'test-token', user: account }));
+    }, account);
+    let rows = [
+      { id: 'key-a', label: 'Primary key', kind: 'system', masked_key: '••••AAAA', is_active: true, status: 'active', reason: 'unchecked', requests_today: 0, daily_limit: 1500, remaining_estimate: 1500 },
+      { id: 'key-b', label: 'Backup key', kind: 'system', masked_key: '••••BBBB', is_active: true, status: 'limited', reason: 'rate_limited', retry_at: '2026-11-27T12:02:00Z', requests_today: 3, daily_limit: 1500, remaining_estimate: 1497 },
+      { id: 'employee', label: 'Employee key', kind: 'user', masked_key: '••••CCCC', is_active: true, status: 'disabled', reason: 'invalid_key', requests_today: 1, daily_limit: 1500, remaining_estimate: 1499 },
+      { id: 'env', label: 'Deployment key', kind: 'environment', masked_key: '••••DDDD', is_active: true, status: 'limited', reason: 'model_unavailable', requests_today: 1, daily_limit: 1500, remaining_estimate: 1499 },
+    ];
+    const mutations: any[] = [];
+    await page.route(/\/api\/v1\/admin\/gemini-/, async route => {
+      const path = new URL(route.request().url()).pathname, method = route.request().method();
+      if (path.endsWith('/gemini-status')) return route.fulfill({ json: { model: 'gemini-test-model', queued: 3, processing: 1, failed: 0, reasons: { missing_key: 3 } } });
+      if (method === 'GET') return route.fulfill({ json: rows });
+      if (path.endsWith('/test')) {
+        const row = rows.find(row => path.includes(row.id))!;
+        const ok = row.kind === 'system'; row.reason = ok ? 'ready' : 'invalid_key'; row.status = ok ? 'active' : 'disabled';
+        return route.fulfill({ json: { ok, code: row.reason, model: 'gemini-test-model' } });
+      }
+      if (method === 'PATCH') {
+        const payload = route.request().postDataJSON(); mutations.push(payload);
+        const row = rows.find(row => path.endsWith(row.id))!;
+        if (payload.make_primary) rows = [row, ...rows.filter(item => item !== row)];
+        if (payload.daily_limit) row.daily_limit = payload.daily_limit;
+        return route.fulfill({ json: { ok: true } });
+      }
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: t.navSettings, exact: true }).click();
+    await page.getByRole('button', { name: t.tabAdmin, exact: true }).click();
+    await page.getByRole('button', { name: t.adminGemini, exact: true }).click();
+    await expect(page.getByText(c.help, { exact: true })).toBeVisible();
+    await expect(page.getByText('gemini-test-model', { exact: true })).toBeVisible();
+    const primary = page.getByRole('article', { name: 'Primary key', exact: true });
+    const backup = page.getByRole('article', { name: 'Backup key', exact: true });
+    await expect(primary.getByText(c.primary, { exact: true })).toBeVisible();
+    await expect(primary.getByText(c.unchecked, { exact: true })).toBeVisible();
+    await expect(backup.getByText(c.rate_limited, { exact: true })).toBeVisible();
+    await primary.getByRole('button', { name: t.testConnection, exact: true }).click();
+    await expect(primary.getByRole('status')).toHaveText(c.ready);
+    await backup.getByRole('button', { name: c.makePrimary, exact: true }).click();
+    await expect(backup.getByText(c.primary, { exact: true })).toBeVisible();
+    expect(mutations[0]).toEqual({ make_primary: true });
+    const employee = page.getByRole('article', { name: 'Employee key', exact: true });
+    await employee.getByRole('button', { name: t.testConnection, exact: true }).click();
+    await expect(employee.getByRole('status')).toHaveText(c.invalid_key);
+    await expect(employee.getByRole('button', { name: c.makePrimary, exact: true })).toHaveCount(0);
+    await backup.locator('summary').click();
+    await backup.getByRole('spinbutton').fill('300');
+    await backup.getByRole('button', { name: t.saveChanges, exact: true }).click();
+    expect(mutations.at(-1)).toEqual({ daily_limit: 300 });
+    if (code === 'ar') {
+      await page.getByRole('heading', { name: t.geminiKeysTitle, exact: true }).evaluate(element => element.scrollIntoView({ block: 'start' }));
+      await page.screenshot({ path: '../.cache/screenshots/gemini-keys.png', fullPage: true });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.getByRole('button', { name: t.appearanceLabel, exact: true }).click();
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await expect.poll(() => page.getByRole('article', { name: 'Backup key', exact: true }).evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(15, 33, 55)');
+      await page.screenshot({ path: '../.cache/screenshots/gemini-keys-mobile-dark.png', fullPage: true });
+    }
+  });
+}
+
+test('queued images and PDFs show a translated actionable reason, not provider error bodies', async ({ page }) => {
+  await mockApi(page); await loginFixture(page);
+  await page.route('**/api/v1/search**', route => route.fulfill({ json: [
+    { ...documents[0], id: 'pending-image', file_name: 'pending.png', status: 'queued', summary: null, snippet: null, indexing_reason: 'missing_key' },
+    { ...documents[1], id: 'pending-pdf', file_name: 'pending.pdf', mime_type: 'application/pdf', status: 'queued', summary: null, snippet: null, indexing_reason: 'rate_limited' },
+  ] }));
+  await page.goto('/');
+  await expect(page.getByText(GEMINI_TEXT.ar.missing_key, { exact: true })).toBeVisible();
+  await expect(page.getByText(GEMINI_TEXT.ar.rate_limited, { exact: true })).toBeVisible();
+  for (const { code } of LANGUAGES) {
+    expect(Object.keys(GEMINI_TEXT[code])).toEqual(Object.keys(GEMINI_TEXT.en));
+    expect(indexingMessage('provider-secret-should-not-render', code)).toBe(GEMINI_TEXT[code].keys_unavailable);
+  }
 });

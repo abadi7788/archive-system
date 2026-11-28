@@ -77,6 +77,7 @@ export type DocItem = {
   snippet?: string | null;
   extracted_text?: string | null;
   status?: string;
+  indexing_reason?: string | null;
   classification?: string | null;
   department?: string | null;
   keywords?: string[];
